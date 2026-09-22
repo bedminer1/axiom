@@ -36,16 +36,24 @@
       try{
         const response=await fetch(source,{cache:'no-store'});
         if(!response.ok)throw new Error('stream offline');
-        if(liveVideo.canPlayType('application/vnd.apple.mpegurl')){
-          liveVideo.src=`${source}?t=${Date.now()}`;
-          await liveVideo.play().catch(()=>{});
-        }else if(Hls.isSupported()){
+        if(Hls.isSupported()){
           hls?.destroy();
-          hls=new Hls({liveSyncDurationCount:2,liveMaxLatencyDurationCount:5,enableWorker:true});
+          hls=new Hls({
+            lowLatencyMode:true,
+            liveSyncDurationCount:1,
+            liveMaxLatencyDurationCount:2,
+            maxLiveSyncPlaybackRate:1.5,
+            maxBufferLength:1,
+            backBufferLength:0,
+            enableWorker:true
+          });
           hls.loadSource(source);
           hls.attachMedia(liveVideo);
           hls.on(Hls.Events.MANIFEST_PARSED,()=>liveVideo.play().catch(()=>{}));
           hls.on(Hls.Events.ERROR,(_event,data)=>{if(data.fatal)schedule()});
+        }else if(liveVideo.canPlayType('application/vnd.apple.mpegurl')){
+          liveVideo.src=`${source}?t=${Date.now()}`;
+          await liveVideo.play().catch(()=>{});
         }else streamState='error';
       }catch{schedule()}
     };
