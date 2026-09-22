@@ -67,7 +67,7 @@ async fn analyze_random(
     State(state): State<AppState>,
     Json(request): Json<AnalyzeRequest>,
 ) -> impl IntoResponse {
-    match analyze(&state, request.model).await {
+    match analyze(&state, request.model, &request.exclude).await {
         Ok(value) => (StatusCode::OK, Json(serde_json::json!(value))).into_response(),
         Err(error) => {
             tracing::error!(?error, "analysis failed");
@@ -80,8 +80,15 @@ async fn analyze_random(
 }
 
 /// Selects an image, runs segmentation, and assembles its response.
-async fn analyze(state: &AppState, model: Model) -> Result<Analysis> {
-    let images = image_files(&state.root.join("data/dataset"))?;
+async fn analyze(state: &AppState, model: Model, exclude: &[String]) -> Result<Analysis> {
+    let images: Vec<PathBuf> = image_files(&state.root.join("data/dataset"))?
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_none_or(|name| !exclude.iter().any(|excluded| excluded == name))
+        })
+        .collect();
     let image_path = images
         .choose(&mut rand::rng())
         .context("dataset is empty; run ./scripts/setup-dataset.sh")?

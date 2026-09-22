@@ -1,6 +1,6 @@
 # Axiom
 
-A minimal concrete-crack screening app. It selects one random image from `lipi17/building-cracks`, generates a binary crack mask, and calculates uncalibrated geometry metrics in Rust. By default it uses Samir Mohamed's concrete-crack U-Net; Meta SAM 3 remains available as an optional backend.
+A minimal concrete-crack screening app. It groups 20 random images from `lipi17/building-cracks` into a demo inspection job, generates binary crack masks, and aggregates simulated geometry metrics. Choose Samir Mohamed's concrete-crack U-Net or Meta SAM 3 at runtime.
 
 ## Architecture
 
@@ -25,6 +25,20 @@ cargo run
 Open `http://127.0.0.1:3000`.
 
 Choose the U-Net or SAM 3 from the model selector in the running interface. The server no longer needs a model launch argument. SAM 3 requires approved checkpoint access and a completed `hf auth login`.
+
+## Remote demo access
+
+This PC already has Tailscale installed and signed in. Keep Axiom running with `cargo run`, then choose one sharing mode:
+
+```bash
+# Private: laptop must be signed into the same Tailscale account.
+./scripts/share-demo.sh private
+
+# Public HTTPS link: works from any laptop/network, but anyone with the URL can use it.
+./scripts/share-demo.sh public
+```
+
+The command prints the HTTPS URL. Public Funnel access should only be enabled during the demo because each visitor can trigger GPU inference. Disable sharing afterward with `tailscale funnel reset` or `tailscale serve reset`.
 
 The U-Net preserves thin cracks with overlapping 256×256 native-resolution tiles. Its mask uses hysteresis thresholding: pixels above `0.35` seed a crack, connected pixels down to `0.10` extend it, and components smaller than 128 pixels are discarded. These values were selected by visually checking representative images, but the model still misses some irregular concrete cracks because its training domain differs. They can be overridden through the worker command, for example:
 

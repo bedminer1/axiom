@@ -19,6 +19,8 @@ pub enum Model {
 pub struct AnalyzeRequest {
     #[serde(default)]
     pub model: Model,
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 /// Reports server readiness and the runtime-selectable model set.

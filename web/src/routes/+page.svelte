@@ -1,36 +1,94 @@
 <script lang="ts">
- import { Activity, Aperture, CircleAlert, ScanLine } from 'lucide-svelte';
- type Result={image_url:string;mask_url:string;source_name:string;model:string;confidence:number;instances:number;metrics:{coverage_percent:number;estimated_length_px:number;demo_estimated_length_mm:number;length_percent_diagonal:number;mean_width_px:number;demo_mean_width_mm:number;mean_width_percent_short_side:number;dominant_orientation_deg:number;orientation_from_horizontal_deg:number;orientation_label:string;foreground_pixels:number;demo_scale_mm_per_px:number};grade:{label:string;rationale:string;calibrated:boolean;simulated:boolean}};
- let result:Result|null=null; let loading=false; let error=''; let showMask=true; let model:'unet'|'sam3'='unet';
- async function analyze(){loading=true;error='';result=null;try{const r=await fetch('/api/analyze/random',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model})});const body=await r.json();if(!r.ok)throw new Error(body.error||'Analysis failed');result=body}catch(e){error=e instanceof Error?e.message:String(e)}finally{loading=false}}
- const fmt=(n:number,d=1)=>n.toFixed(d);
+  import { Activity, Aperture, CircleAlert, ScanLine } from 'lucide-svelte';
+
+  type Model = 'unet' | 'sam3';
+  type Result = {
+    image_url:string; mask_url:string; source_name:string; model:string; confidence:number; instances:number;
+    metrics:{coverage_percent:number; estimated_length_px:number; demo_estimated_length_mm:number; length_percent_diagonal:number; mean_width_px:number; demo_mean_width_mm:number; mean_width_percent_short_side:number; dominant_orientation_deg:number; orientation_from_horizontal_deg:number; orientation_label:string; foreground_pixels:number; demo_scale_mm_per_px:number};
+    grade:{label:string; rationale:string; calibrated:boolean; simulated:boolean};
+  };
+
+  const target = 20;
+  let results:Result[] = [];
+  let loading = false;
+  let error = '';
+  let failed = 0;
+  let showMask = true;
+  let model:Model = 'unet';
+  let selectedIndex = 0;
+  let startedAt = 0;
+  let elapsed = 0;
+  let timer:ReturnType<typeof setInterval>|undefined;
+
+  $: selected = results[selectedIndex] ?? null;
+  $: totalLength = results.reduce((sum,item)=>sum+item.metrics.demo_estimated_length_mm,0);
+  $: averageWidth = results.length ? results.reduce((sum,item)=>sum+item.metrics.demo_mean_width_mm,0)/results.length : 0;
+  $: averageCoverage = results.length ? results.reduce((sum,item)=>sum+item.metrics.coverage_percent,0)/results.length : 0;
+  $: widest = results.length ? Math.max(...results.map(item=>item.metrics.demo_mean_width_mm)) : 0;
+  $: severity = {hairline:results.filter(item=>item.grade.label==='hairline').length,moderate:results.filter(item=>item.grade.label==='moderate').length,wide:results.filter(item=>item.grade.label==='wide').length};
+
+  const fmt=(value:number,digits=1)=>value.toFixed(digits);
+
+  async function requestPhoto():Promise<Result>{
+    const response=await fetch('/api/analyze/random',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,exclude:results.map(item=>item.source_name)})});
+    const body=await response.json();
+    if(!response.ok)throw new Error(body.error||'Analysis failed');
+    return body;
+  }
+
+  async function runJob(){
+    loading=true; error=''; failed=0; results=[]; selectedIndex=0; startedAt=Date.now(); elapsed=0;
+    timer=setInterval(()=>elapsed=Math.floor((Date.now()-startedAt)/1000),1000);
+    let attempts=0;
+    while(results.length<target&&attempts<target+10){
+      attempts+=1;
+      try{results=[...results,await requestPhoto()];selectedIndex=results.length-1}
+      catch(caught){failed+=1;error=caught instanceof Error?caught.message:String(caught)}
+    }
+    if(timer)clearInterval(timer);
+    loading=false;
+    if(results.length===target)error='';
+    else error=`Job completed with ${results.length} of ${target} photos. Last error: ${error}`;
+  }
 </script>
-<svelte:head><title>Axiom — concrete inspection</title><meta name="description" content="AI concrete crack screening"/></svelte:head>
-<header><div class="shell nav"><a href="/" class="brand"><span class="mark">AX</span> axiom</a><span class="muted tiny">concrete intelligence / mvp 0.1</span></div></header>
+
+<svelte:head><title>Axiom — inspection job</title><meta name="description" content="AI concrete crack screening job dashboard"/></svelte:head>
+
+<header><div class="shell nav"><a href="/" class="brand"><span class="mark">AX</span> axiom</a><span class="muted tiny">concrete intelligence / job demo</span></div></header>
 <main class="shell">
- <section class="intro"><div><div class="eyebrow">Visual condition screening</div><h1>Read the fracture.<br/><span>Measure the evidence.</span></h1><p>One randomly selected Building Cracks image, segmented by the selected model and reduced to a small set of explainable geometry signals.</p></div><div class="actions"><label><span>model</span><select bind:value={model} disabled={loading}><option value="unet">Crack U-Net · fast</option><option value="sam3">Meta SAM 3 · accurate</option></select></label><button class="button" onclick={analyze} disabled={loading}>{loading?`running ${model}…`:'analyze random sample'}</button></div></section>
- {#if error}<div class="error hairline"><CircleAlert size={18}/><div><strong>Analysis unavailable</strong><p>{error}</p><span>See README for model setup and troubleshooting.</span></div></div>{/if}
- {#if !result && !error}<div class="empty hairline"><ScanLine size={28}/><p>{loading?'Loading a sample and generating its mask…':'No sample analyzed yet.'}</p></div>{/if}
- {#if result}
- <section class="workspace">
-  <div class="viewer hairline">
-   <div class="viewerbar"><div><span class="eyebrow">source</span><strong>{result.source_name}</strong></div><label><input type="checkbox" bind:checked={showMask}/> mask overlay</label></div>
-   <div class="canvas"><img src={result.image_url} alt="Concrete crack sample"/>{#if showMask}<img class="mask" src={result.mask_url} alt="Predicted crack mask"/>{/if}<div class="reticle"></div></div>
-  </div>
-  <aside>
-   <div class="grade hairline"><div class="eyebrow">structural severity</div><div class="gradeword">{result.grade.label}</div><p>{result.grade.rationale}</p></div>
-   <div class="metrics">
-    <article class="hairline"><Aperture size={16}/><span class="eyebrow">mask coverage</span><div class="value">{fmt(result.metrics.coverage_percent,2)}%</div><small>fraction of image area</small></article>
-    <article class="hairline"><Activity size={16}/><span class="eyebrow">demo length</span><div class="value">{fmt(result.metrics.demo_estimated_length_mm)} mm*</div><small>{fmt(result.metrics.estimated_length_px)} px centerline proxy</small></article>
-    <article class="hairline"><div class="orientation"><span>H</span><i class="angle" style={`transform:rotate(${result.metrics.dominant_orientation_deg}deg)`}></i><span>V</span></div><span class="eyebrow">general direction</span><div class="value direction">{result.metrics.orientation_label}</div><small>{fmt(result.metrics.orientation_from_horizontal_deg)}° from image horizontal</small></article>
-    <article class="hairline"><span class="widthIcon"></span><span class="eyebrow">demo mean width</span><div class="value">{fmt(result.metrics.demo_mean_width_mm,2)} mm*</div><small>{fmt(result.metrics.mean_width_px,2)} px · assumed {fmt(result.metrics.demo_scale_mm_per_px,2)} mm/px</small></article>
-   </div>
-   <div class="meta hairline"><div><span>model</span><b>{result.model}</b></div><div><span>worker score</span><b>{fmt(result.confidence*100)}% · uncalibrated</b></div><div><span>mask components</span><b>{result.instances}</b></div><div><span>measurements</span><b>simulated demo</b></div></div>
-  </aside>
- </section>
- {/if}
- <footer><span>Screening output only — not a structural engineering assessment.</span><span>* fabricated demo scale / not a field measurement</span></footer>
+  <section class="intro">
+    <div><div class="eyebrow">Building envelope inspection</div><h1>Twenty photos.<br/><span>One job-level view.</span></h1><p>Analyze a simulated inspection set, review every mask, and aggregate crack geometry into a concise demo report.</p></div>
+    <div class="actions"><label><span>model</span><select bind:value={model} disabled={loading}><option value="unet">Crack U-Net · fast</option><option value="sam3">Meta SAM 3 · accurate</option></select></label><button class="button" onclick={runJob} disabled={loading}>{loading?'inspection running…':results.length?'run new job':'run 20-photo job'}</button></div>
+  </section>
+
+  {#if loading}
+    <section class="loading hairline"><div class="scanner"></div><div class="radar"><i></i><i></i><b>AX</b></div><div class="eyebrow">processing inspection set</div><div class="progressTitle">Photo {Math.min(results.length+1,target)} / {target}</div><p>{model==='sam3'?'Loading SAM 3 and segmenting':'Tiled crack segmentation'} · {elapsed}s elapsed {failed?`· ${failed} retries`:''}</p><div class="track"><span style={`width:${results.length/target*100}%`}></span></div><small>segmenting → measuring → aggregating</small></section>
+  {/if}
+
+  {#if error&&!loading}<div class="error hairline"><CircleAlert size={18}/><div><strong>Job completed with warnings</strong><p>{error}</p></div></div>{/if}
+
+  {#if results.length}
+    <section class="summary hairline">
+      <div class="summaryHead"><div><div class="eyebrow">job summary</div><h2>Building envelope · inspection 001</h2></div><span class="demoTag">simulated scale</span></div>
+      <div class="summaryGrid"><article><span>photos analyzed</span><b>{results.length}/{target}</b></article><article><span>total crack length</span><b>{fmt(totalLength,0)} <small>mm*</small></b></article><article><span>average width</span><b>{fmt(averageWidth,2)} <small>mm*</small></b></article><article><span>average coverage</span><b>{fmt(averageCoverage,2)}%</b></article><article><span>widest mean</span><b>{fmt(widest,2)} <small>mm*</small></b></article></div>
+      <div class="bands"><span>hairline <b>{severity.hairline}</b></span><span>moderate <b>{severity.moderate}</b></span><span>wide <b>{severity.wide}</b></span></div>
+      <p class="disclaimer">* Demo values assume 0.12 mm/px. Measurements and severity bands are fabricated for presentation, not engineering use.</p>
+    </section>
+
+    <section class="strip hairline"><div class="stripHead"><span class="eyebrow">inspection photos</span><span>{results.length} records</span></div><div class="thumbs">{#each results as item,index}<button class:active={index===selectedIndex} onclick={()=>selectedIndex=index}><img src={item.image_url} alt="Inspection thumbnail"/><span>{String(index+1).padStart(2,'0')}</span><i class={item.grade.label}></i></button>{/each}</div></section>
+  {/if}
+
+  {#if selected}
+    <section class="workspace">
+      <div class="viewer hairline"><div class="viewerbar"><div><span class="eyebrow">photo {selectedIndex+1} / {results.length}</span><strong>{selected.source_name}</strong></div><label><input type="checkbox" bind:checked={showMask}/> mask overlay</label></div><div class="canvas"><img src={selected.image_url} alt="Concrete crack sample"/>{#if showMask}<img class="mask" src={selected.mask_url} alt="Predicted crack mask"/>{/if}<div class="reticle"></div></div></div>
+      <aside><div class="grade hairline"><div class="eyebrow">demo severity</div><div class="gradeword">{selected.grade.label}</div><p>{selected.grade.rationale}</p></div><div class="metrics"><article class="hairline"><Aperture size={16}/><span class="eyebrow">coverage</span><div class="value">{fmt(selected.metrics.coverage_percent,2)}%</div><small>image area</small></article><article class="hairline"><Activity size={16}/><span class="eyebrow">length</span><div class="value">{fmt(selected.metrics.demo_estimated_length_mm)} mm*</div><small>{fmt(selected.metrics.estimated_length_px)} px proxy</small></article><article class="hairline"><div class="orientation"><span>H</span><i class="angle" style={`transform:rotate(${selected.metrics.dominant_orientation_deg}deg)`}></i><span>V</span></div><span class="eyebrow">direction</span><div class="value direction">{selected.metrics.orientation_label}</div><small>{fmt(selected.metrics.orientation_from_horizontal_deg)}° from horizontal</small></article><article class="hairline"><span class="widthIcon"></span><span class="eyebrow">mean width</span><div class="value">{fmt(selected.metrics.demo_mean_width_mm,2)} mm*</div><small>{fmt(selected.metrics.mean_width_px,2)} px</small></article></div><div class="meta hairline"><div><span>model</span><b>{selected.model}</b></div><div><span>worker score</span><b>{fmt(selected.confidence*100)}%</b></div><div><span>components</span><b>{selected.instances}</b></div></div></aside>
+    </section>
+  {:else if !loading}
+    <div class="empty hairline"><ScanLine size={28}/><p>No inspection job analyzed yet.</p></div>
+  {/if}
+  <footer><span>Screening demo only — not a structural engineering assessment.</span><span>* fabricated scale and severity</span></footer>
 </main>
+
 <style>
- header{border-bottom:1px solid #171717}.nav{height:58px;display:flex;align-items:center;justify-content:space-between}.brand{color:#eee;text-decoration:none;font-size:13px}.mark{display:inline-grid;place-items:center;width:27px;height:27px;border:1px solid #333;border-radius:5px;margin-right:9px}.tiny{font-size:10px}.intro{padding:72px 0 44px;display:flex;align-items:flex-end;justify-content:space-between;gap:40px}.intro h1{font-size:clamp(38px,6vw,72px);line-height:1.02;letter-spacing:-.065em;margin:15px 0 22px;font-weight:500}.intro h1 span{color:#777}.intro p{color:#999;max-width:680px;font-size:13px;line-height:1.75;margin:0}.actions{display:grid;gap:8px;min-width:220px}.actions label{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #292929;border-radius:7px;padding:8px 10px}.actions label span{font-size:9px;text-transform:uppercase;color:#777}.actions select{border:0;background:#080808;color:#ddd;font-size:10px;outline:0}.empty{height:380px;display:grid;place-content:center;text-align:center;color:#666}.error{padding:20px;display:flex;gap:14px;border-color:#543232;color:#d2a3a3}.error p{font-size:12px;margin:8px 0}.error span{font-size:10px;color:#8e7474}.workspace{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(290px,.7fr);gap:14px}.viewer{overflow:hidden}.viewerbar{height:64px;border-bottom:1px solid #1f1f1f;padding:12px 15px;display:flex;justify-content:space-between;align-items:center}.viewerbar strong{display:block;font-size:11px;margin-top:6px;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewerbar label{font-size:10px;color:#999;display:flex;align-items:center;gap:8px}.canvas{aspect-ratio:1;position:relative;background:#0e0e0e;overflow:hidden}.canvas img{position:absolute;width:100%;height:100%;object-fit:contain}.canvas .mask{mix-blend-mode:screen;opacity:.72;filter:sepia(1) saturate(15) hue-rotate(315deg)}.reticle{position:absolute;inset:10px;border:1px solid #ffffff0c;pointer-events:none}aside{display:flex;flex-direction:column;gap:12px}.grade{padding:18px}.gradeword{font-size:32px;letter-spacing:-.05em;text-transform:uppercase;margin:12px 0}.grade p{color:#8c8c8c;font-size:10px;line-height:1.6;margin:0}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metrics article{padding:14px;min-height:140px;display:flex;flex-direction:column;justify-content:space-between}.metrics small{color:#666;font-size:8px;line-height:1.4}.direction{font-size:14px;line-height:1.1}.orientation{display:flex;align-items:center;gap:5px;color:#555;font-size:7px}.angle{display:inline-block;width:24px;border-top:1px solid #aaa;transform-origin:center}.widthIcon{width:18px;height:8px;border-top:1px solid #aaa;border-bottom:1px solid #aaa}.meta{padding:5px 14px}.meta div{display:flex;justify-content:space-between;gap:15px;padding:11px 0;border-bottom:1px solid #171717;font-size:10px}.meta div:last-child{border:0}.meta span{color:#777}.meta b{font-weight:400;text-align:right}footer{display:flex;justify-content:space-between;color:#555;font-size:9px;padding:34px 0 22px}@media(max-width:800px){.intro{padding-top:46px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.tiny,footer span:last-child{display:none}.metrics{grid-template-columns:1fr 1fr}}
+header{border-bottom:1px solid #171717}.nav{height:58px;display:flex;align-items:center;justify-content:space-between}.brand{color:#eee;text-decoration:none;font-size:13px}.mark{display:inline-grid;place-items:center;width:27px;height:27px;border:1px solid #333;border-radius:5px;margin-right:9px}.tiny{font-size:10px}.intro{padding:68px 0 38px;display:flex;align-items:flex-end;justify-content:space-between;gap:40px}.intro h1{font-size:clamp(38px,6vw,72px);line-height:1.02;letter-spacing:-.065em;margin:15px 0 20px;font-weight:500}.intro h1 span{color:#777}.intro p{color:#999;max-width:680px;font-size:13px;line-height:1.75;margin:0}.actions{display:grid;gap:8px;min-width:230px}.actions label{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #292929;border-radius:7px;padding:8px 10px}.actions label span{font-size:9px;text-transform:uppercase;color:#777}.actions select{border:0;background:#080808;color:#ddd;font-size:10px;outline:0}.empty{height:320px;display:grid;place-content:center;text-align:center;color:#666}.error{padding:18px;display:flex;gap:14px;border-color:#543232;color:#d2a3a3;margin-bottom:14px}.error p{font-size:11px;margin:7px 0 0}.loading{height:420px;display:grid;place-content:center;text-align:center;position:relative;overflow:hidden}.scanner{position:absolute;inset-inline:0;height:90px;background:linear-gradient(transparent,#6ee7b711,transparent);animation:scan 2.2s linear infinite}.radar{width:92px;height:92px;margin:0 auto 24px;display:grid;place-items:center;position:relative}.radar i{position:absolute;inset:0;border:1px solid #6ee7b744;border-radius:50%;animation:pulse 1.8s ease-in-out infinite}.radar i:nth-child(2){inset:14px;animation-delay:.25s}.radar b{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#b7f7d5;color:#07110c;font-size:11px}.progressTitle{font-size:26px;margin:10px 0 6px}.loading p,.loading small{font-size:9px;color:#777}.track{width:300px;height:3px;background:#1d1d1d;margin:20px auto 10px;border-radius:9px;overflow:hidden}.track span{display:block;height:100%;background:#9ff0c5;transition:width .4s}.summary{padding:20px;margin-bottom:14px}.summaryHead{display:flex;justify-content:space-between;align-items:start}.summary h2{font-size:18px;font-weight:400;margin:8px 0 18px}.demoTag{font-size:8px;text-transform:uppercase;color:#e9c46a;border:1px solid #e9c46a44;border-radius:99px;padding:5px 8px}.summaryGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#202020;border:1px solid #202020;border-radius:8px;overflow:hidden}.summaryGrid article{background:#050505;padding:14px}.summaryGrid span{font-size:8px;text-transform:uppercase;color:#777}.summaryGrid b{font-size:21px;font-weight:400;display:block;margin-top:10px}.summaryGrid small{font-size:9px;color:#777}.bands{display:flex;gap:8px;margin-top:12px}.bands span{font-size:9px;color:#888;border:1px solid #252525;border-radius:99px;padding:6px 10px}.bands b{color:#ddd}.disclaimer{font-size:8px;color:#595959;margin:13px 0 0}.strip{margin-bottom:14px;padding:12px}.stripHead{display:flex;justify-content:space-between;margin:0 3px 10px;font-size:9px;color:#666}.thumbs{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}.thumbs button{position:relative;aspect-ratio:1;border:1px solid transparent;border-radius:5px;overflow:hidden;padding:0;background:#111;cursor:pointer}.thumbs button.active{border-color:#eee}.thumbs img{width:100%;height:100%;object-fit:cover}.thumbs span{position:absolute;left:4px;bottom:3px;font-size:7px;background:#000b;padding:2px}.thumbs i{position:absolute;right:4px;top:4px;width:5px;height:5px;border-radius:50%;background:#7a7a7a}.thumbs i.moderate{background:#e9c46a}.thumbs i.wide{background:#e76f51}.workspace{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(290px,.7fr);gap:14px}.viewer{overflow:hidden}.viewerbar{height:64px;border-bottom:1px solid #1f1f1f;padding:12px 15px;display:flex;justify-content:space-between;align-items:center}.viewerbar strong{display:block;font-size:11px;margin-top:6px;max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.viewerbar label{font-size:10px;color:#999;display:flex;align-items:center;gap:8px}.canvas{aspect-ratio:1;position:relative;background:#0e0e0e;overflow:hidden}.canvas img{position:absolute;width:100%;height:100%;object-fit:contain}.canvas .mask{mix-blend-mode:screen;opacity:.72;filter:sepia(1) saturate(15) hue-rotate(315deg)}.reticle{position:absolute;inset:10px;border:1px solid #ffffff0c;pointer-events:none}aside{display:flex;flex-direction:column;gap:12px}.grade{padding:18px}.gradeword{font-size:32px;letter-spacing:-.05em;text-transform:uppercase;margin:12px 0}.grade p{color:#8c8c8c;font-size:10px;line-height:1.6;margin:0}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metrics article{padding:14px;min-height:138px;display:flex;flex-direction:column;justify-content:space-between}.metrics small{color:#666;font-size:8px;line-height:1.4}.direction{font-size:13px;line-height:1.1}.orientation{display:flex;align-items:center;gap:5px;color:#555;font-size:7px}.angle{display:inline-block;width:24px;border-top:1px solid #aaa;transform-origin:center}.widthIcon{width:18px;height:8px;border-top:1px solid #aaa;border-bottom:1px solid #aaa}.meta{padding:5px 14px}.meta div{display:flex;justify-content:space-between;gap:15px;padding:11px 0;border-bottom:1px solid #171717;font-size:10px}.meta div:last-child{border:0}.meta span{color:#777}.meta b{font-weight:400;text-align:right}footer{display:flex;justify-content:space-between;color:#555;font-size:9px;padding:34px 0 22px}@keyframes scan{from{transform:translateY(-100px)}to{transform:translateY(430px)}}@keyframes pulse{0%,100%{transform:scale(.8);opacity:.3}50%{transform:scale(1);opacity:1}}@media(max-width:800px){.intro{padding-top:44px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.summaryGrid{grid-template-columns:1fr 1fr}.thumbs{grid-template-columns:repeat(5,1fr)}.tiny,footer span:last-child{display:none}.metrics{grid-template-columns:1fr 1fr}}
 </style>
