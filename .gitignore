@@ -5,6 +5,8 @@ web/build/
 data/dataset/
 data/artifacts/
 ml/.venv/
+__pycache__/
+*.pyc
 .DS_Store
 telebot/.env
 telebot/models/

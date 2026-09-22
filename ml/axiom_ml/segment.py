@@ -16,8 +16,8 @@ def main() -> None:
 
     try:
         import torch
-        from sam3.model_builder import build_sam3_image_model
         from sam3.model.sam3_image_processor import Sam3Processor
+        from sam3.model_builder import build_sam3_image_model
     except Exception as exc:
         raise RuntimeError(f"SAM 3 is not installed correctly: {exc}") from exc
 
@@ -27,8 +27,11 @@ def main() -> None:
     image = Image.open(args.image).convert("RGB")
     model = build_sam3_image_model()
     processor = Sam3Processor(model)
-    state = processor.set_image(image)
-    result = processor.set_text_prompt(state=state, prompt=args.prompt)
+    # SAM 3 mixes BF16 activations with FP32 weights on recent CUDA/PyTorch
+    # combinations unless the whole image inference path is under autocast.
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        state = processor.set_image(image)
+        result = processor.set_text_prompt(state=state, prompt=args.prompt)
     masks = result["masks"].detach().float().cpu().numpy()
     scores = result["scores"].detach().float().cpu().numpy().reshape(-1)
     if masks.size == 0:
@@ -52,4 +55,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1)
-
