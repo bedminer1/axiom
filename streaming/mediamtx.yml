@@ -1,0 +1,12 @@
+# Receives the drone's RTMP publication. FFmpeg and Axiom handle browser delivery.
+logLevel: info
+rtmp: yes
+rtmpAddress: :1935
+hls: no
+webrtc: no
+rtsp: no
+srt: no
+moq: no
+paths:
+  all_others:
+    source: publisher

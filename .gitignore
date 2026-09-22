@@ -4,6 +4,8 @@ web/.svelte-kit/
 web/build/
 data/dataset/
 data/artifacts/
+data/live/
+streaming/bin/
 ml/.venv/
 __pycache__/
 *.pyc

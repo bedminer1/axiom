@@ -36,6 +36,7 @@ pub async fn serve(root: PathBuf) -> Result<()> {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/analyze/random", post(analyze_random))
+        .nest_service("/live", ServeDir::new(root.join("data/live")))
         .nest_service("/dataset", ServeDir::new(root.join("data/dataset")))
         .nest_service("/artifacts", ServeDir::new(root.join("data/artifacts")))
         .fallback_service(
