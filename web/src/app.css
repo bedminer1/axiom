@@ -1,0 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+:root{font-family:'JetBrains Mono',monospace;color:#ededed;background:#050505;font-synthesis:none}*{box-sizing:border-box}body{margin:0;min-width:320px;background:#050505}button{font:inherit}::selection{background:#eee;color:#050505}
+.shell{width:min(1180px,calc(100% - 32px));margin:auto}.hairline{border:1px solid #1f1f1f;background:#080808;border-radius:10px}.muted{color:#929292}.eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#929292}.value{font-size:22px;letter-spacing:-.04em}.pill{display:inline-flex;border:1px solid #292929;border-radius:999px;padding:5px 9px;font-size:11px}.button{border:1px solid #e8e8e8;background:#e8e8e8;color:#050505;border-radius:7px;padding:10px 15px;cursor:pointer}.button:disabled{opacity:.45;cursor:wait}@media(max-width:800px){.shell{width:min(100% - 20px,1180px)}}
+
