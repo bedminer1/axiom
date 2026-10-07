@@ -6,4 +6,6 @@ data/dataset/
 data/artifacts/
 ml/.venv/
 .DS_Store
-
+telebot/.env
+telebot/models/
+telebot/run/

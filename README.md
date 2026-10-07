@@ -39,6 +39,12 @@ For frontend iteration, run `./scripts/dev.sh` and open Vite's printed URL.
 
 Coverage is the mask fraction of the 640×640 image. Dominant orientation is the principal axis of foreground pixels. Length is a centerline proxy and mean width is mask area divided by that proxy. The provisional minor/moderate/severe grade uses visible coverage thresholds only. All measurements remain pixels because this dataset has no physical scale; the result is explicitly not an engineering assessment.
 
+## Telegram photo bot
+
+The independent Rust/teloxide bot in [`telebot/`](telebot/README.md) accepts
+photos, detects crack candidates with YOLOv8s, and returns annotated images.
+See its README for model setup, token configuration and running the bot.
+
 ## Checks
 
 ```bash
