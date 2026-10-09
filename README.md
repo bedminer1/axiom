@@ -1,16 +1,16 @@
 # Axiom
 
-A minimal concrete-crack screening app. It selects one random image from `lipi17/building-cracks`, asks Meta SAM 3 to segment `crack in concrete`, and calculates uncalibrated geometry metrics in Rust.
+A minimal concrete-crack screening app. It groups 20 random images from `lipi17/building-cracks` into a demo inspection job, generates binary crack masks, and aggregates simulated geometry metrics. Choose Samir Mohamed's concrete-crack U-Net or Meta SAM 3 at runtime.
 
 ## Architecture
 
 - Rust/Axum: random sample selection, worker orchestration, geometry, provisional screening grade, static file serving.
-- Python: official SAM 3 PyTorch inference only.
+- Python: concrete-crack U-Net inference by default, with optional official SAM 3 inference.
 - SvelteKit: small monochrome inspection interface derived from the portfolio design language.
 
 ## Requirements
 
-The official SAM 3 repository currently requires Python 3.12+, PyTorch 2.7+, CUDA 12.6+, an approved request for the gated checkpoint, and an authenticated Hugging Face account. SAM inference therefore needs a CUDA machine; Apple Silicon can still run and develop the web/API portions.
+The default U-Net checkpoint is public and downloads automatically from Hugging Face on first use. It supports either CUDA or CPU inference. The optional official SAM 3 backend requires Python 3.12+, PyTorch 2.7+, CUDA, an approved request for the gated checkpoint, and an authenticated Hugging Face account.
 
 ## Setup
 
@@ -19,15 +19,39 @@ The official SAM 3 repository currently requires Python 3.12+, PyTorch 2.7+, CUD
 npm --prefix web install
 npm --prefix web run build
 uv sync --project ml
-hf auth login
 cargo run
 ```
 
 Open `http://127.0.0.1:3000`.
 
-For a dedicated CUDA environment, point the server at any command with the same CLI contract:
+Choose the U-Net or SAM 3 from the model selector in the running interface. The server no longer needs a model launch argument. SAM 3 requires approved checkpoint access and a completed `hf auth login`.
+
+## Remote demo access
+
+This PC already has Tailscale installed and signed in. Keep Axiom running with `cargo run`, then choose one sharing mode:
 
 ```bash
+# Private: laptop must be signed into the same Tailscale account.
+./scripts/share-demo.sh private
+
+# Public HTTPS link: works from any laptop/network, but anyone with the URL can use it.
+./scripts/share-demo.sh public
+```
+
+The command prints the HTTPS URL. Public Funnel access should only be enabled during the demo because each visitor can trigger GPU inference. Disable sharing afterward with `tailscale funnel reset` or `tailscale serve reset`.
+
+The U-Net preserves thin cracks with overlapping 256×256 native-resolution tiles. Its mask uses hysteresis thresholding: pixels above `0.35` seed a crack, connected pixels down to `0.10` extend it, and components smaller than 128 pixels are discarded. These values were selected by visually checking representative images, but the model still misses some irregular concrete cracks because its training domain differs. They can be overridden through the worker command, for example:
+
+```bash
+AXIOM_UNET_COMMAND="uv run --project ml python -m axiom_ml.crack_segment --low-threshold 0.2 --high-threshold 0.45 --min-component-pixels 64" cargo run
+```
+
+The source dataset was stretched to 640×640 and does not provide camera distance, intrinsics, or a known-size reference. For demonstration only, Axiom applies an assumed `0.12 mm/px` conversion and clearly marks the resulting millimetre values and severity labels as simulated. They are not field measurements.
+
+For a dedicated environment, point either backend at any command with the same CLI contract:
+
+```bash
+AXIOM_UNET_COMMAND="/path/to/python -m axiom_ml.crack_segment" cargo run
 AXIOM_SAM_COMMAND="/path/to/python -m axiom_ml.segment" cargo run
 ```
 
@@ -37,7 +61,7 @@ For frontend iteration, run `./scripts/dev.sh` and open Vite's printed URL.
 
 ## Metrics and grading
 
-Coverage is the mask fraction of the 640×640 image. Dominant orientation is the principal axis of foreground pixels. Length is a centerline proxy and mean width is mask area divided by that proxy. The provisional minor/moderate/severe grade uses visible coverage thresholds only. All measurements remain pixels because this dataset has no physical scale; the result is explicitly not an engineering assessment.
+Coverage is the mask fraction of the 640×640 image. Dominant orientation is the principal axis of foreground pixels. Length is a centerline proxy and mean width is mask area divided by that proxy. Demo severity uses simulated mean-width bands: under 0.3 mm is hairline, under 1.0 mm is moderate, and 1.0 mm or more is wide. These bands and physical values are presentation data, not an engineering assessment.
 
 ## Telegram photo bot
 
