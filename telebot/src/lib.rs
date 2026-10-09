@@ -1,4 +1,7 @@
+pub mod deepseek;
 pub mod detector;
+pub mod store;
+pub mod worker;
 
 use std::path::{Path, PathBuf};
 

@@ -10,7 +10,7 @@ const OVERLAP: u32 = 128;
 const MAX_SIDE: u32 = 3072;
 const MAX_BOXES: usize = 100;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct Detection {
     pub x1: f32,
     pub y1: f32,
@@ -23,6 +23,9 @@ pub struct ProcessedImage {
     pub jpeg: Vec<u8>,
     pub detections: usize,
     pub passes: usize,
+    pub boxes: Vec<Detection>,
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct Detector {
@@ -144,6 +147,9 @@ impl Detector {
             jpeg,
             detections: boxes.len(),
             passes,
+            width: image.width(),
+            height: image.height(),
+            boxes,
         })
     }
 

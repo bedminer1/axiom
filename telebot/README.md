@@ -1,81 +1,153 @@
-# DataDog photo bot
+# DataDog evidence collector
 
-A separate Rust/teloxide bot: receive an image, detect crack candidates with
-crack-trained YOLOv8s, draw bounding boxes and confidence labels, and reply with
-the annotated JPEG. There are no Telegram commands. Text and unrelated files
-are ignored. Works independently of the web/SAM app.
+A standalone Rust/teloxide Telegram bot with conversational project management,
+a local SQLite evidence register, a six-type checklist, DeepSeek text/vision
+classification and the existing crack-trained YOLO image replies.
 
-## Setup and run
+## Run
 
 From the repository root:
 
 ```sh
 uv run --python 3.12 telebot/setup_model.py
+# For a first installation only; preserve an existing configured .env.
 cp telebot/.env.example telebot/.env
 chmod 600 telebot/.env
-# Put your BotFather token in telebot/.env.
+# Set TELOXIDE_TOKEN and DEEPSEEK_API_KEY in that file.
 cargo run --release --manifest-path telebot/Cargo.toml
 ```
 
-If `telebot/.env` is already configured, keep that file. The setup script is
-idempotent and verifies the pinned checkpoint's SHA-256 before loading it.
-Python/Ultralytics are used only to export the model once and obtain the native
-ONNX Runtime library. The running bot, inference, image processing and Telegram
-handling are Rust. CPU inference works on Apple Silicon; no CUDA or SAM needed.
+Python is only used for the one-time ONNX export/runtime download. The running
+bot, database access, Telegram handling and inference pipeline are Rust.
+DeepSeek defaults to `https://api.deepseek.com`, model `deepseek-flash` (V4.1
+Flash), enabled thinking and `reasoning_effort: high`. Each relevant text message
+or photo can incur an API request. Classification receives a 1600-pixel preview,
+its caption and focused project/sender/reply context. API usage and the returned
+model identifier are retained; reasoning traces are not retained.
 
-Open the bot's Telegram conversation and send a photo. You can also send a JPEG,
-PNG or WebP **as a file** to preserve its resolution, up to Telegram's 20 MB bot
-download limit. Each image in an album is processed and returned individually.
-Replies stay in the originating chat and forum topic and reference the photo.
+Only one polling instance may use this Telegram token. Stop with Ctrl-C. Remove
+an existing webhook before using polling. The bot runs while its local process
+and computer are running. It has no slash commands and does not import old chat
+history.
 
-For a group, make the bot an admin or disable privacy mode through BotFather's
-`/setprivacy` and re-add it. Telegram otherwise withholds ordinary group photos.
-For a channel, add the bot with permission to post photos. Existing history is
-not imported. No commands need to be configured in BotFather.
+For groups, disable privacy through BotFather and re-add the bot, or give it
+admin access so Telegram delivers ordinary messages and photos. Channel posts
+are supported when the bot has posting permission. Replies stay in the original
+forum topic. Bot-generated messages are excluded from collection.
 
-Only one polling instance should use the token. Stop the foreground instance
-with Ctrl-C. If a webhook is already configured for this token, remove it before
-running a polling instance.
+## Conversation
 
-## Detection
-
-- Uses the single-class `crack` checkpoint from
-  [Utbird/crack_detection](https://huggingface.co/Utbird/crack_detection), pinned
-  to revision `a5382b48f32fab49f2881b18bc3125592c318c64`.
-- A 640-pixel whole-image pass plus overlapping 640-pixel crops keeps more
-  detail in distant views. Boxes are mapped back to the image and deduplicated
-  using non-maximum suppression.
-- Images larger than 3072 pixels on their longest side are resized to bound CPU
-  work. Phone EXIF orientation is applied before detecting and drawing.
-- `YOLO_CONFIDENCE` defaults to `0.35`; lower it to admit weaker detections, at
-  the expense of more false positives. `YOLO_IOU` defaults to `0.45`.
-- An image with no detections is still returned, with an explicit caption.
-- Detection confidence is a model score, not an engineering severity rating.
-  Far-away cracks that are not resolved in the source image can be missed;
-  representative façade photographs are needed to evaluate this checkpoint.
-
-Images are processed in memory, with a serialized reusable model and a bounded
-queue. Incoming images are not archived. The `.env`, downloaded weights, native
-runtime and `run/` logs are ignored by Git. Keep the token out of source files.
-
-## Checks
-
-```sh
-cargo fmt --manifest-path telebot/Cargo.toml --check
-cargo test --manifest-path telebot/Cargo.toml
-cargo clippy --manifest-path telebot/Cargo.toml --all-targets -- -D warnings
-cargo run --release --manifest-path telebot/Cargo.toml --example detect -- input.jpg output.jpg
+```text
+new project guys, Star Vista
+track East and West elevations
+[photo] building overview
+[image of drawing] plan drawing
+[photo] East elevation overview
+[photo] new finding, East elevation, level 3. Crack beside window.
+[reply with another photo] close-up for F001
+[reply to a saved photo] that is the context photo for F001
+show the checklist
+list projects
+select Star Vista
+rename Star Vista to The Star Vista
+archive The Star Vista
+restore The Star Vista
 ```
 
-The offline example uses the same Rust detector as Telegram. It does not send
-messages. Tests cover letterbox coordinates, crop coverage, overlapping-box
-suppression, photo resolution selection and message filtering.
+Location matching normalizes case, punctuation and whitespace. Project IDs are
+UUIDs; normalized location keys and aliases prevent duplicate sites **within a
+Telegram chat**. Similar names prompt clarification. To intentionally create a
+separate similarly named site, use `new distinct location: FULL LOCATION`.
+Projects are isolated by chat; sharing a site between different chats is not
+implemented. Each chat/topic has an active project, and each sender has separate
+finding and clarification context. Changing projects clears the sender contexts.
+Archive is reversible and retains evidence; permanent deletion is not exposed.
 
-## References
+If a photo cannot be assigned confidently, it stays unassigned and the bot asks
+for its purpose, elevation or finding. Directions and levels are supplied by the
+inspector rather than inferred from the photo. Reply to the original image or its
+bot receipt/annotation to correct its assignment. Evidence IDs look like E0001;
+finding IDs like F001 are scoped to their project.
 
-The dispatcher and dependency injection follow teloxide's official examples:
+## Exact checklist
 
-- [dispatching_features.rs](https://github.com/teloxide/teloxide/blob/master/crates/teloxide/examples/dispatching_features.rs)
-- [shared_state.rs](https://github.com/teloxide/teloxide/blob/master/crates/teloxide/examples/shared_state.rs)
-- [Download API](https://docs.rs/teloxide/0.17.0/teloxide/net/trait.Download.html)
-- [Ultralytics ONNX export](https://docs.ultralytics.com/modes/export/)
+| Scope | Required evidence |
+| --- | --- |
+| Project | Building overview photo |
+| Project | Plan drawing image |
+| Each named elevation | Elevation overview photo |
+| Each finding | Context photo |
+| Each finding | Close-up photo |
+| Each finding | Text description |
+
+The bot creates additional elevation/finding slots as they are identified. One
+photo has one primary assignment, and extra photos can supplement that slot. A
+caption can also provide separate description evidence. Descriptions quote the
+submitted text, rather than generating engineering observations from images.
+
+A tick indicates saved and assigned evidence. This is an evidence collection
+MVP; it does not calculate inspection coverage, physical crack measurements or
+produce an engineering assessment/report. Plan input currently accepts JPEG,
+PNG or WebP images; PDF/CAD files are not imported.
+
+## Storage and recovery
+
+Paths are relative to `telebot/`, regardless of the launch directory:
+
+```text
+data/telebot.sqlite                 SQLite register (WAL)
+data/evidence/E0001/source.jpg      Downloaded source (PNG/WebP also supported)
+data/evidence/E0001/preview.jpg     Oriented image for DeepSeek
+data/evidence/E0001/annotated.jpg   YOLO result
+```
+
+Set `BOT_DATA_DIR` to change this directory. `.env`, `data/`, `models/` and `run/`
+are ignored by Git. Restrict access to the local evidence directory and back up
+it together with SQLite. For a consistent copy, stop the bot first (or use
+SQLite's backup API); a live database may also have WAL/SHM files.
+
+The register retains Telegram source JSON with sender details, source/receipt
+timestamps, chat/topic/message/album IDs, captions, reply relationships and file
+identifiers. Image records include filenames, actual MIME types, dimensions,
+byte counts, SHA-256 hashes, available EXIF fields and storage paths. It also
+retains assignments, descriptions, model/usage metadata, YOLO boxes and change
+history. YOLO coordinates refer to the annotated image's recorded dimensions.
+An undecodable downloaded source is retained as `source.bin`.
+
+Telegram photos can be compressed; sending an image **as a file** preserves the
+supplied file. Download limit: 20 MB. Album photos each retain their own evidence
+record and annotation. Checklist updates are debounced/coalesced into one
+editable summary message; receipts remain per photo. Large checklists spill into
+multiple messages. Summaries are not automatically pinned.
+
+Durable workers separately download images, classify/interpret messages, run
+YOLO, and send queued replies. Restarting resumes pending work. Photo storage and
+YOLO continue if DeepSeek is slow or unavailable. Classification retries up to
+five times with backoff; source download and YOLO each retry up to three times.
+Explicit manual labels remain available during API outages by replying with
+`building overview`, `plan`, `East elevation overview`, `F001 close-up` or
+`F001 context photo`. Project creation and free-form descriptions need DeepSeek.
+
+Telegram updates are deduplicated by chat/message ID. Repeated uploads retain
+separate provenance and hashes; the checklist uses presence, not photo counts.
+Database changes, audit records and response queue entries commit together.
+Delivery uses an outbox with retries; a crash after Telegram accepts a message
+but before SQLite records delivery can cause a duplicate reply. Message edits
+are not automatically reprocessed: send a correction as a new reply.
+
+## YOLO
+
+Crack-trained YOLOv8s uses the pinned
+[Utbird/crack_detection checkpoint](https://huggingface.co/Utbird/crack_detection).
+A whole-image 640-pixel pass plus overlapping native-resolution crops finds
+crack candidates. Large sources are resized to 3072 pixels maximum; phone
+orientation is applied. `YOLO_CONFIDENCE=0.35` and `YOLO_IOU=0.45` are defaults.
+A missing YOLO installation does not prevent evidence collection. Detections
+are model candidates; distant cracks absent from the source detail can be missed.
+
+## Implementation references
+
+- [teloxide shared state example](https://github.com/teloxide/teloxide/blob/master/crates/teloxide/examples/shared_state.rs)
+- [teloxide dispatcher example](https://github.com/teloxide/teloxide/blob/master/crates/teloxide/examples/dispatching_features.rs)
+- [DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/)
+- [DeepSeek model metadata](https://api-docs.deepseek.com/api/list-models/)

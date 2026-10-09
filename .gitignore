@@ -9,3 +9,4 @@ ml/.venv/
 telebot/.env
 telebot/models/
 telebot/run/
+telebot/data/
