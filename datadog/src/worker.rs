@@ -241,6 +241,21 @@ fn direct_instruction(text: &str) -> Option<Proposal> {
     let lower = trimmed.to_lowercase();
     if matches!(
         crate::store::normalize(trimmed).as_str(),
+        "what is needed for all the other checklist steps"
+            | "what is needed for all other checklist steps"
+            | "what is needed for all remaining checklist steps"
+            | "explain all remaining checklist steps"
+            | "explain the remaining checklist"
+    ) {
+        return serde_json::from_value(json!({
+            "action": "explain_inspection_step",
+            "step": null,
+            "certain": true
+        }))
+        .ok();
+    }
+    if matches!(
+        crate::store::normalize(trimmed).as_str(),
         "list projects"
             | "show projects"
             | "show my projects"

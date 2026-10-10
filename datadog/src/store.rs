@@ -256,25 +256,25 @@ fn inspection_step_key(value: &str) -> Option<&'static str> {
 fn inspection_step_guidance(key: &str) -> &'static str {
     match key {
         "project_setup" => {
-            "Project setup is complete when the building project, inspection and team access are established."
+            "Project setup\n• Name the building or site.\n• Start an inspection.\n• Add the people working on it."
         }
         "document_review" => {
-            "Document review: record the approved plans and elevation drawings, previous inspection reports, repair or maintenance records, and the BCA notice or report reference. Note anything unavailable. Say “document review is done” when the available records have been reviewed and gaps are recorded."
+            "Document review\n• Find the approved plans and elevation drawings.\n• Find older inspection reports.\n• Find repair and maintenance records.\n• Record the BCA notice or report reference.\n• Write down anything you could not find.\n• Then say “document review is done”."
         }
         "evidence_collection" => {
-            "Visual evidence collection is checked automatically. Send a building overview, a plan drawing and an overview for every tracked elevation. Label unclear photos by replying to them."
+            "Visual evidence collection\n• Send one photo showing the whole building.\n• Send the plan drawing.\n• Send one overview photo for every building face you are tracking.\n• Reply to any unclear photo with its label.\n\nDataDog checks this step automatically."
         }
         "close_range_inspection" => {
-            "Close-range inspection: record the inspected locations, access method, date, personnel and tools; mark the locations on the elevation drawings; and record the inspected area or coverage calculation for each elevation. Add context and close-up photos for findings."
+            "Close-range inspection\n• Record where you inspected.\n• Record the date, people, access method and tools used.\n• Mark each inspected place on the elevation drawing.\n• Record the inspected area or coverage for every elevation.\n• Send a context photo and close-up for each finding.\n• Then say “close-range inspection is done”."
         }
         "findings_review" => {
-            "Findings review: each finding should have a location, elevation and level or zone, a context photo, a close-up, and an inspector description. Confirm or correct AI observations and record any physical verification separately."
+            "Findings review\n• Give every finding an elevation and level or zone.\n• Check that it has a context photo and close-up.\n• Add a short inspector description.\n• Confirm or correct the AI notes.\n• Record any tapping or other physical checks.\n• Then say “findings review is done”."
         }
         "report_drafting" => {
-            "Report drafting: review the project particulars, checklist, evidence register and finding descriptions, then ask DataDog to generate the DOCX draft. Complete any bracketed fields before CP review."
+            "Report drafting\n• Check the building details.\n• Check that the checklist and finding notes are complete.\n• Ask DataDog to generate the draft report.\n• Fill in every field marked “To be completed”.\n• Then say “report drafting is done”."
         }
         "cp_review" => {
-            "CP review and certification: the appointed Competent Person reviews the evidence and draft, completes the assessment and recommendations, and signs or certifies the final report."
+            "CP review and certification\n• Ask the appointed Competent Person to review the evidence and draft.\n• Complete the assessment and recommended actions.\n• Sign and certify the final report.\n• The project lead can then mark CP review complete."
         }
         _ => {
             "Ask about project setup, document review, visual evidence collection, close-range inspection, findings review, report drafting, or CP review."
@@ -1684,7 +1684,24 @@ impl Store {
                 let step = p.step.as_deref().and_then(inspection_step_key);
                 receipt = match step {
                     Some(key) => inspection_step_guidance(key).to_owned(),
-                    None => inspection_step_guidance("").to_owned(),
+                    None => {
+                        if let Some(run) = inspection_run.as_deref() {
+                            let rows = db::query("SELECT step_key FROM inspection_steps WHERE inspection_run=? AND status<>'complete' ORDER BY ordinal")
+                                .bind(run).fetch_all(&mut tx).await?;
+                            if rows.is_empty() {
+                                "Every checklist step is complete.".into()
+                            } else {
+                                rows.iter()
+                                    .map(|row| {
+                                        inspection_step_guidance(&row.get::<String, _>("step_key"))
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n\n")
+                            }
+                        } else {
+                            "Select a project and inspection first.".into()
+                        }
+                    }
                 };
             }
             Action::UpdateInspectionStep => {
