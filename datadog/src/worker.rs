@@ -175,7 +175,7 @@ async fn collect_one(bot: &Bot, store: &Store, model: &DeepSeek, job: &Job) -> R
         }
     }
     let context = store.context(job).await?;
-    let proposal = if let Some(analysis) = &job.analysis {
+    let mut proposal = if let Some(analysis) = &job.analysis {
         serde_json::from_str::<Proposal>(analysis)?
     } else if let Some(proposal) = direct_instruction(&job.text) {
         let analysis = crate::deepseek::Analysis {
@@ -216,6 +216,14 @@ async fn collect_one(bot: &Bot, store: &Store, model: &DeepSeek, job: &Job) -> R
             }
         }
     };
+    if !msg.chat.is_private() && !group_action_allowed(&job.text, &proposal) {
+        proposal.action = Action::Ignore;
+        proposal.question = None;
+    }
+    if !msg.chat.is_private() && proposal.action != Action::Ignore && image_file(&msg).is_none() {
+        db::query("INSERT INTO outbox(chat,topic,reply_to,kind,text,source_message) VALUES(?,?,?,'loading','Fetching.',?)")
+            .bind(job.chat).bind(job.topic).bind(job.telegram_id).bind(job.id).execute(&store.db).await?;
+    }
     if proposal.action == Action::GenerateReport {
         return store.generate_report(job, &context).await;
     }
@@ -233,6 +241,65 @@ async fn collect_one(bot: &Bot, store: &Store, model: &DeepSeek, job: &Job) -> R
             clarification.question=Some("I couldn’t apply that assignment. Please specify the location, elevation, finding ID and photo label.".into());
             store.apply(job, &clarification, &context).await
         }
+    }
+}
+
+fn group_action_allowed(text: &str, proposal: &Proposal) -> bool {
+    let text = crate::store::normalize(text);
+    let has = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
+    match proposal.action {
+        Action::ListProjects => {
+            !has(&["wont", "won t", "dont", "don t", "not see", "not show"])
+                && has(&[
+                    "list projects",
+                    "show projects",
+                    "show my projects",
+                    "which projects",
+                    "what projects",
+                ])
+        }
+        Action::RenameProject => has(&["rename", "change the project name", "change project name"]),
+        Action::AddTeamMember => has(&["add", "invite"]) && has(&["team", "member", "@"]),
+        Action::RemoveTeamMember => has(&["remove", "kick"]) && has(&["team", "member", "@"]),
+        Action::UpdateProjectDetails => has(&[
+            "set",
+            "update",
+            "change",
+            "address",
+            "building type",
+            "owner",
+            "mcst",
+            "top",
+            "csc",
+        ]),
+        Action::UpdateInspectionStep => has(&[
+            "done",
+            "complete",
+            "completed",
+            "reopen",
+            "pending",
+            "in progress",
+            "finished",
+        ]),
+        Action::ExplainInspectionStep => has(&[
+            "what is needed",
+            "what do i need",
+            "explain",
+            "require",
+            "checklist step",
+        ]),
+        Action::Clarify => has(&[
+            "project",
+            "inspection",
+            "checklist",
+            "report",
+            "evidence",
+            "photo",
+            "finding",
+            "elevation",
+            "datadog",
+        ]),
+        _ => true,
     }
 }
 

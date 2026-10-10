@@ -137,50 +137,6 @@ fn looks_like_project_name(text: &str) -> bool {
         })
 }
 
-fn actionable_group_message(
-    msg: &teloxide::types::Message,
-    text: &str,
-    awaiting_name: bool,
-) -> bool {
-    if awaiting_name || crate::worker::image_file(msg).is_some() {
-        return true;
-    }
-    if msg
-        .reply_to_message()
-        .is_some_and(|reply| crate::worker::image_file(reply).is_some())
-    {
-        return true;
-    }
-    let text = normalize(text);
-    [
-        "project",
-        "inspection",
-        "checklist",
-        "report",
-        "elevation",
-        "finding",
-        "evidence",
-        "photo",
-        "overview",
-        "close up",
-        "plan",
-        "facade",
-        "defect",
-        "crack",
-        "spalling",
-        "corrosion",
-        "level",
-        "zone",
-        "team",
-        "datadog",
-        "archive",
-        "restore",
-        "rename",
-    ]
-    .iter()
-    .any(|term| text.contains(term))
-}
-
 fn welcome_text(role: &str, can_create: bool) -> String {
     let access = if role == "superuser" {
         "Access: superuser"
@@ -821,17 +777,13 @@ impl Store {
             return Ok(());
         }
         let awaiting_input = active.get::<i64, _>("awaiting_project_name") == 1;
-        if !msg.chat.is_private() && !actionable_group_message(msg, text, awaiting_input) {
-            tx.commit().await?;
-            return Ok(());
-        }
         let limit = db::query("SELECT window_started_at,accepted_count FROM message_rate_limits WHERE chat=? AND user=?")
             .bind(msg.chat.id.0).bind(access.get::<i64,_>("id")).fetch_optional(&mut tx).await?;
         let timestamp = now();
         if let Some(limit) = limit {
             let started: i64 = limit.get("window_started_at");
             let count: i64 = limit.get("accepted_count");
-            if timestamp - started < 60 && count >= 12 {
+            if timestamp - started < 60 && count >= 30 {
                 tx.commit().await?;
                 return Ok(());
             }
@@ -909,8 +861,10 @@ impl Store {
                     .bind(msg.id.0)
                     .fetch_one(&mut tx)
                     .await?;
-            db::query("INSERT INTO outbox(chat,topic,reply_to,kind,text,source_message) VALUES(?,?,?,'loading','Fetching.',?)")
-                .bind(msg.chat.id.0).bind(topic).bind(msg.id.0).bind(source_message).execute(&mut tx).await?;
+            if msg.chat.is_private() || crate::worker::image_file(msg).is_some() {
+                db::query("INSERT INTO outbox(chat,topic,reply_to,kind,text,source_message) VALUES(?,?,?,'loading','Fetching.',?)")
+                    .bind(msg.chat.id.0).bind(topic).bind(msg.id.0).bind(source_message).execute(&mut tx).await?;
+            }
         }
         tx.commit().await?;
         Ok(())
@@ -1313,14 +1267,24 @@ impl Store {
     }
     pub async fn apply(&self, job: &Job, p: &Proposal, context: &Value) -> Result<()> {
         if p.action == Action::Ignore && self.current_evidence(job).await?.is_none() {
-            self.enqueue(
-                job,
-                "reply",
-                &format!("I’m not sure what you want me to do.\n\n{}", help_text()),
-                None,
-                None,
-            )
-            .await?;
+            let is_private: i64 =
+                db::query_scalar("SELECT is_private FROM chats WHERE chat=? AND topic=?")
+                    .bind(job.chat)
+                    .bind(job.topic)
+                    .fetch_one(&self.db)
+                    .await?;
+            if is_private == 1 {
+                self.enqueue(
+                    job,
+                    "reply",
+                    &format!("I’m not sure what you want me to do.\n\n{}", help_text()),
+                    None,
+                    None,
+                )
+                .await?;
+            } else {
+                self.enqueue(job, "delete_loading", "", None, None).await?;
+            }
             db::query("UPDATE messages SET status='done' WHERE id=?")
                 .bind(job.id)
                 .execute(&self.db)
