@@ -172,6 +172,7 @@ fn actionable_group_message(
         "level",
         "zone",
         "team",
+        "datadog",
         "archive",
         "restore",
         "rename",
@@ -533,6 +534,15 @@ impl Store {
         let normalized_role_question = normalized_role_question
             .trim_end_matches(['?', '.', '!'])
             .trim();
+        let normalized_address = normalize(normalized_role_question);
+        let addressed = normalized_address
+            .split_whitespace()
+            .any(|word| word == "datadog");
+        let addressed_text = normalized_address
+            .split_whitespace()
+            .filter(|word| *word != "datadog")
+            .collect::<Vec<_>>()
+            .join(" ");
         let role_question = matches!(
             normalized_role_question,
             "am i a superuser" | "am i an admin" | "what is my role" | "who am i"
@@ -545,7 +555,15 @@ impl Store {
                 | "how to use datadog"
                 | "what can datadog do"
                 | "what can you do"
-        );
+        ) || (addressed
+            && matches!(
+                addressed_text.as_str(),
+                "help"
+                    | "how do i use you"
+                    | "how do i use the bot"
+                    | "what can you do"
+                    | "what do you do"
+            ));
         if command == "/help" || help_question {
             db::query("INSERT INTO outbox(chat,topic,reply_to,kind,text) VALUES(?,?,?,'reply',?)")
                 .bind(msg.chat.id.0)
@@ -558,10 +576,14 @@ impl Store {
             return Ok(());
         }
         let greeting = matches!(
-            normalized_role_question,
+            if addressed {
+                addressed_text.as_str()
+            } else {
+                normalized_role_question
+            },
             "hi" | "hello" | "hey" | "hiya" | "good morning" | "good afternoon" | "good evening"
         );
-        if msg.chat.is_private() && greeting {
+        if greeting && (msg.chat.is_private() || addressed) {
             db::query("INSERT INTO outbox(chat,topic,reply_to,kind,text) VALUES(?,?,?,'reply',?)")
                 .bind(msg.chat.id.0)
                 .bind(topic)
