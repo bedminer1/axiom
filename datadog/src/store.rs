@@ -209,6 +209,79 @@ fn help_text() -> &'static str {
     "What DataDog can do\n\nTalk naturally — no commands needed.\n\n• Add DataDog to an inspection group and start a project.\n• Send photos with captions. DataDog organises the evidence, updates the checklist and flags visible conditions for review.\n• Ask to see the checklist, team or current project.\n• Ask for a draft report when the inspection is ready.\n\nHaving an unrelated group conversation? Say “stop listening”. Say “start listening” when you want DataDog to handle photos and inspection notes again.\n\nBugs or feature requests: @dkffjlrtm"
 }
 
+fn inspection_step_key(value: &str) -> Option<&'static str> {
+    let value = normalize(value);
+    [
+        ("project_setup", ["project setup", "setup"].as_slice()),
+        (
+            "document_review",
+            ["document review", "documents", "document"].as_slice(),
+        ),
+        (
+            "evidence_collection",
+            [
+                "visual evidence collection",
+                "evidence collection",
+                "visual evidence",
+                "photos",
+            ]
+            .as_slice(),
+        ),
+        (
+            "close_range_inspection",
+            [
+                "close range inspection",
+                "close range",
+                "close up inspection",
+            ]
+            .as_slice(),
+        ),
+        (
+            "findings_review",
+            ["findings review", "finding review", "findings"].as_slice(),
+        ),
+        (
+            "report_drafting",
+            ["report drafting", "draft report", "report draft"].as_slice(),
+        ),
+        (
+            "cp_review",
+            ["cp review and certification", "cp review", "certification"].as_slice(),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(key, aliases)| aliases.iter().any(|alias| value == *alias).then_some(key))
+}
+
+fn inspection_step_guidance(key: &str) -> &'static str {
+    match key {
+        "project_setup" => {
+            "Project setup is complete when the building project, inspection and team access are established."
+        }
+        "document_review" => {
+            "Document review: record the approved plans and elevation drawings, previous inspection reports, repair or maintenance records, and the BCA notice or report reference. Note anything unavailable. Say “document review is done” when the available records have been reviewed and gaps are recorded."
+        }
+        "evidence_collection" => {
+            "Visual evidence collection is checked automatically. Send a building overview, a plan drawing and an overview for every tracked elevation. Label unclear photos by replying to them."
+        }
+        "close_range_inspection" => {
+            "Close-range inspection: record the inspected locations, access method, date, personnel and tools; mark the locations on the elevation drawings; and record the inspected area or coverage calculation for each elevation. Add context and close-up photos for findings."
+        }
+        "findings_review" => {
+            "Findings review: each finding should have a location, elevation and level or zone, a context photo, a close-up, and an inspector description. Confirm or correct AI observations and record any physical verification separately."
+        }
+        "report_drafting" => {
+            "Report drafting: review the project particulars, checklist, evidence register and finding descriptions, then ask DataDog to generate the DOCX draft. Complete any bracketed fields before CP review."
+        }
+        "cp_review" => {
+            "CP review and certification: the appointed Competent Person reviews the evidence and draft, completes the assessment and recommendations, and signs or certifies the final report."
+        }
+        _ => {
+            "Ask about project setup, document review, visual evidence collection, close-range inspection, findings review, report drafting, or CP review."
+        }
+    }
+}
+
 fn legal_text() -> &'static str {
     "Before you start\n\n• We store the account and project data needed to run DataDog. We do not sell your data.\n• AI output can be wrong. Inspectors remain responsible for findings and final reports.\n• Do not attack the service, bypass access controls, or use malicious prompts.\n\nTap OK to accept the Privacy Policy and Terms of Use."
 }
@@ -1221,10 +1294,7 @@ impl Store {
             self.enqueue(
                 job,
                 "reply",
-                &format!(
-                    "I’m not sure what you want me to do. Did you mean to show the checklist, organise evidence, or generate a report?\n\n{}",
-                    help_text()
-                ),
+                &format!("I’m not sure what you want me to do.\n\n{}", help_text()),
                 None,
                 None,
             )
@@ -1610,6 +1680,96 @@ impl Store {
                     changed = true;
                 }
             }
+            Action::ExplainInspectionStep => {
+                let step = p.step.as_deref().and_then(inspection_step_key);
+                receipt = match step {
+                    Some(key) => inspection_step_guidance(key).to_owned(),
+                    None => inspection_step_guidance("").to_owned(),
+                };
+            }
+            Action::UpdateInspectionStep => {
+                let run = inspection_run
+                    .clone()
+                    .context("select an inspection before updating its checklist")?;
+                let supplied = p
+                    .step
+                    .as_deref()
+                    .context("which checklist item should I update?")?;
+                let step = inspection_step_key(supplied)
+                    .context("I could not match that checklist item")?;
+                ensure!(
+                    !matches!(step, "project_setup" | "evidence_collection"),
+                    "project setup and visual evidence collection are updated automatically"
+                );
+                let status = match p.step_status.as_deref().map(normalize).as_deref() {
+                    Some("complete" | "completed" | "done") => "complete",
+                    Some("in progress" | "started" | "reopen" | "reopened") => "in_progress",
+                    Some("pending" | "not done" | "incomplete") => "pending",
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "say whether the checklist item is complete, in progress, or pending"
+                        ));
+                    }
+                };
+                if step == "cp_review" && status == "complete" {
+                    let lead: Option<i64> =
+                        db::query_scalar("SELECT lead_user FROM projects WHERE id=?")
+                            .bind(project.as_deref().context("select a project first")?)
+                            .fetch_one(&mut tx)
+                            .await?;
+                    ensure!(
+                        is_superuser || lead == Some(actor_id),
+                        "only the project lead or a superuser can complete CP review"
+                    );
+                }
+                db::query("UPDATE inspection_steps SET status=?,started_at=CASE WHEN ?='in_progress' THEN COALESCE(started_at,?) ELSE started_at END,completed_at=CASE WHEN ?='complete' THEN ? ELSE NULL END WHERE inspection_run=? AND step_key=?")
+                    .bind(status).bind(status).bind(now()).bind(status).bind(now()).bind(&run).bind(step).execute(&mut tx).await?;
+                let next: Option<String> = db::query_scalar("SELECT step_key FROM inspection_steps WHERE inspection_run=? AND required=1 AND status<>'complete' ORDER BY ordinal LIMIT 1")
+                    .bind(&run).fetch_optional(&mut tx).await?;
+                db::query("UPDATE inspection_runs SET current_step=?,updated_at=? WHERE id=?")
+                    .bind(next.unwrap_or_else(|| "complete".into()))
+                    .bind(now())
+                    .bind(&run)
+                    .execute(&mut tx)
+                    .await?;
+                receipt = format!("{} marked {}.", supplied.trim(), status.replace('_', " "));
+                changed = true;
+            }
+            Action::UpdateProjectDetails => {
+                let id = project
+                    .clone()
+                    .context("select a project before updating its details")?;
+                let lead: Option<i64> =
+                    db::query_scalar("SELECT lead_user FROM projects WHERE id=?")
+                        .bind(&id)
+                        .fetch_one(&mut tx)
+                        .await?;
+                ensure!(
+                    is_superuser || lead == Some(actor_id),
+                    "only the project lead or a superuser can update project details"
+                );
+                ensure!(
+                    p.project_address.is_some()
+                        || p.building_type.is_some()
+                        || p.owner_name.is_some()
+                        || p.top_csc_date.is_some(),
+                    "provide an address, building type, owner or MCST name, or TOP/CSC date"
+                );
+                db::query("UPDATE projects SET address=COALESCE(?,address),building_type=COALESCE(?,building_type),owner_name=COALESCE(?,owner_name),top_csc_date=COALESCE(?,top_csc_date) WHERE id=?")
+                    .bind(&p.project_address).bind(&p.building_type).bind(&p.owner_name).bind(&p.top_csc_date).bind(&id).execute(&mut tx).await?;
+                let fields = [
+                    p.project_address.as_ref().map(|_| "address"),
+                    p.building_type.as_ref().map(|_| "building type"),
+                    p.owner_name.as_ref().map(|_| "owner/MCST"),
+                    p.top_csc_date.as_ref().map(|_| "TOP/CSC date"),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(", ");
+                receipt = format!("Updated project {fields}.");
+                changed = true;
+            }
             Action::RenameProject | Action::ArchiveProject | Action::RestoreProject => {
                 let id = if let Some(loc) = &p.location {
                     db::query_scalar::<String>("SELECT p.id FROM projects p LEFT JOIN aliases a ON a.project=p.id WHERE (p.location_key=? OR (a.chat=? AND a.location_key=?)) AND (? OR p.lead_user=?) LIMIT 1")
@@ -1697,7 +1857,7 @@ impl Store {
                     "Please specify the project, elevation or photo label.".into()
                 });
                 question = Some(if current.is_none() {
-                    format!("Did you mean: {suggestion}\n\n{}", help_text())
+                    format!("{suggestion}\n\n{}", help_text())
                 } else {
                     suggestion
                 });

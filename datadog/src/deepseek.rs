@@ -18,11 +18,14 @@ pub enum Action {
     CreateFinding,
     UpdateEvidence,
     RenameProject,
+    UpdateProjectDetails,
     ArchiveProject,
     RestoreProject,
     AddTeamMember,
     RemoveTeamMember,
     ShowTeam,
+    UpdateInspectionStep,
+    ExplainInspectionStep,
     GenerateReport,
     Clarify,
 }
@@ -70,6 +73,14 @@ pub struct Proposal {
     #[serde(default)]
     pub new_location: Option<String>,
     #[serde(default)]
+    pub project_address: Option<String>,
+    #[serde(default)]
+    pub building_type: Option<String>,
+    #[serde(default)]
+    pub owner_name: Option<String>,
+    #[serde(default)]
+    pub top_csc_date: Option<String>,
+    #[serde(default)]
     pub inspection_reference: Option<String>,
     #[serde(default)]
     pub inspection_title: Option<String>,
@@ -101,6 +112,10 @@ pub struct Proposal {
     pub zone: Option<String>,
     #[serde(default)]
     pub member: Option<String>,
+    #[serde(default)]
+    pub step: Option<String>,
+    #[serde(default)]
+    pub step_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +234,10 @@ impl DeepSeek {
         for value in [
             &proposal.location,
             &proposal.new_location,
+            &proposal.project_address,
+            &proposal.building_type,
+            &proposal.owner_name,
+            &proposal.top_csc_date,
             &proposal.inspection_reference,
             &proposal.inspection_title,
             &proposal.elevation,
@@ -230,6 +249,8 @@ impl DeepSeek {
             &proposal.field_note,
             &proposal.zone,
             &proposal.member,
+            &proposal.step,
+            &proposal.step_status,
         ]
         .into_iter()
         .flatten()

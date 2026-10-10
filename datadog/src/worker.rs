@@ -239,6 +239,21 @@ async fn collect_one(bot: &Bot, store: &Store, model: &DeepSeek, job: &Job) -> R
 fn direct_instruction(text: &str) -> Option<Proposal> {
     let trimmed = text.trim();
     let lower = trimmed.to_lowercase();
+    if matches!(
+        crate::store::normalize(trimmed).as_str(),
+        "list projects"
+            | "show projects"
+            | "show my projects"
+            | "what projects can i access"
+            | "which projects can i access"
+            | "what projects am i working on"
+    ) {
+        return serde_json::from_value(json!({
+            "action": "list_projects",
+            "certain": true
+        }))
+        .ok();
+    }
     let location = [
         "start a new project",
         "create a new project",
@@ -387,6 +402,10 @@ fn manual_label(text: &str, context: &Value) -> Option<Proposal> {
         action: Action::UpdateEvidence,
         location: None,
         new_location: None,
+        project_address: None,
+        building_type: None,
+        owner_name: None,
+        top_csc_date: None,
         inspection_reference: None,
         inspection_title: None,
         elevations: vec![],
@@ -403,6 +422,8 @@ fn manual_label(text: &str, context: &Value) -> Option<Proposal> {
         field_note: None,
         zone: None,
         member: None,
+        step: None,
+        step_status: None,
     })
 }
 pub async fn yolo_loop(
