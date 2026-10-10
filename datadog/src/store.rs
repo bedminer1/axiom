@@ -50,6 +50,33 @@ pub fn title_case_name(value: &str) -> String {
         .join(" ")
 }
 
+fn clean_project_name(value: &str) -> String {
+    let trimmed = value.trim();
+    let lower = trimmed.to_lowercase();
+    [
+        "start a new project",
+        "create a new project",
+        "start new project",
+        "create project",
+        "new project",
+        "change project to",
+        "switch project to",
+        "select project",
+    ]
+    .iter()
+    .find_map(|prefix| {
+        lower.strip_prefix(prefix).map(|remainder| {
+            let offset = trimmed.len() - remainder.len();
+            trimmed[offset..]
+                .trim_start_matches([' ', ',', ':', '-'])
+                .trim()
+                .to_owned()
+        })
+    })
+    .filter(|name| !name.is_empty())
+    .unwrap_or_else(|| trimmed.to_owned())
+}
+
 fn requested_project_name(text: &str) -> Option<String> {
     let trimmed = text.trim();
     let lower = trimmed.to_lowercase();
@@ -751,7 +778,7 @@ impl Store {
             (awaiting_input && looks_like_project_name(text)).then(|| text.trim().to_owned())
         });
         if let Some(name) = proposed_name {
-            let display_name = title_case_name(&name);
+            let display_name = title_case_name(&clean_project_name(&name));
             ensure!(
                 !normalize(&display_name).is_empty() && display_name.len() <= 200,
                 "invalid project name"
@@ -1265,8 +1292,12 @@ impl Store {
         match p.action {
             Action::SelectProject => {
                 if let Some(location) = p.location.as_deref().filter(|v| !normalize(v).is_empty()) {
-                    let key = normalize(location);
+                    let location = clean_project_name(location);
+                    let key = normalize(&location);
                     ensure!(key.len() <= 200, "location too long");
+                    let select_only = ["change project", "switch project", "select project"]
+                        .iter()
+                        .any(|prefix| normalize(&job.text).starts_with(prefix));
                     let existing: Option<String> = db::query_scalar(
                         "SELECT p.id FROM projects p LEFT JOIN aliases a ON a.project=p.id WHERE (p.location_key=? OR (a.chat=? AND a.location_key=?)) AND (? OR p.lead_user=? OR EXISTS(SELECT 1 FROM project_members pm WHERE pm.project=p.id AND pm.user=?)) LIMIT 1",
                     )
@@ -1275,6 +1306,10 @@ impl Store {
                     .await?;
                     if let Some(id) = existing {
                         project = Some(id);
+                    } else if select_only {
+                        question = Some(format!(
+                            "I can’t find an accessible project named {location}. Ask a project member to add you, or check the project name."
+                        ));
                     } else {
                         let sites=db::query("SELECT p.id,p.location,p.location_key FROM projects p WHERE p.archived=0 AND (? OR p.lead_user=? OR EXISTS(SELECT 1 FROM project_members pm WHERE pm.project=p.id AND pm.user=?))").bind(is_superuser).bind(actor_id).bind(actor_id).fetch_all(&mut tx).await?;
                         let similar: Vec<String> = sites
@@ -1312,7 +1347,7 @@ impl Store {
                                     Some(actor_id)
                                 };
                                 if let Some(lead_id) = lead_id {
-                                    let display_location = title_case_name(location);
+                                    let display_location = title_case_name(&location);
                                     let id = uuid::Uuid::new_v4().to_string();
                                     db::query("INSERT INTO projects(id,location,location_key,owner_chat,lead_user,created_at) VALUES(?,?,?,?,?,?)").bind(&id).bind(&display_location).bind(&key).bind(job.chat).bind(lead_id).bind(now()).execute(&mut tx).await?;
                                     db::query("INSERT INTO project_members(project,user,added_by,created_at) VALUES(?,?,?,?)").bind(&id).bind(lead_id).bind(lead_id).bind(now()).execute(&mut tx).await?;

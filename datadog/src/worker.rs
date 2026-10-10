@@ -245,6 +245,9 @@ fn direct_instruction(text: &str) -> Option<Proposal> {
         "start new project",
         "create project",
         "new project",
+        "change project to",
+        "switch project to",
+        "select project",
     ]
     .iter()
     .find_map(|prefix| {
