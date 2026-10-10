@@ -1,0 +1,45 @@
+services:
+  datadog:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: axiom-datadog:latest
+    container_name: datadog
+    env_file:
+      - ${DATADOG_ENV_FILE:-/etc/axiom-datadog.env}
+    environment:
+      BOT_DATA_DIR: /var/lib/datadog
+      REPORT_PYTHON: /usr/local/bin/python3
+      REPORT_SCRIPT: /opt/datadog/report.py
+      YOLO_MODEL: /opt/datadog/models/crack.onnx
+      ORT_DYLIB_PATH: /opt/datadog/models/libonnxruntime.so
+      ORT_INTRA_THREADS: "2"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    stop_grace_period: 30s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    volumes:
+      - datadog-data:/var/lib/datadog
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  datadog-data:

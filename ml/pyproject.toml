@@ -12,6 +12,7 @@ dependencies = [
     "pycocotools",
     "psutil",
     "setuptools<81",
+    "opencv-python-headless>=4.11.0.86",
 ]
 
 [tool.uv.sources]

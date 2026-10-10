@@ -10,7 +10,11 @@ ml/.venv/
 __pycache__/
 *.pyc
 .DS_Store
-telebot/.env
-telebot/models/
-telebot/run/
-telebot/data/
+/datadog/.env
+/datadog/.venv/
+/datadog/models/
+/datadog/run/
+/datadog/data/
+/datadog/website/node_modules/
+/datadog/website/.svelte-kit/
+/datadog/website/build/

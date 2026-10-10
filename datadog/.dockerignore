@@ -1,0 +1,12 @@
+.env
+.venv
+data
+run
+target
+models/.ultralytics
+models/crack.pt
+models/*.download
+models/source.json
+__pycache__
+*.pyc
+architecture.excalidraw

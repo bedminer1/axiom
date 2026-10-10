@@ -65,9 +65,10 @@ Coverage is the mask fraction of the 640×640 image. Dominant orientation is the
 
 ## Telegram photo bot
 
-The independent Rust/teloxide bot in [`telebot/`](telebot/README.md) accepts
-photos, detects crack candidates with YOLOv8s, and returns annotated images.
-See its README for model setup, token configuration and running the bot.
+The independent Rust/teloxide inspection assistant in [`datadog/`](datadog/README.md)
+organizes Telegram photos, records preliminary visible defect observations, and
+can assemble a fillable PFI report draft. The appointed Competent Person remains
+responsible for inspection conclusions and certification.
 
 ## Checks
 
