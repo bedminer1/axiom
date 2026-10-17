@@ -1,0 +1,5 @@
+/target/
+/data/
+/website/.svelte-kit/
+/website/build/
+/website/node_modules/

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta id="theme-color" name="theme-color" content="#ffffff" />
+    <meta name="darkreader-lock" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem('hound-theme');
+        const useDark = savedTheme === 'dark';
+        document.documentElement.classList.toggle('dark', useDark);
+        document.documentElement.dataset.theme = useDark ? 'dark' : 'light';
+        document.querySelector('#theme-color')?.setAttribute('content', useDark ? '#111110' : '#ffffff');
+      } catch {
+        document.documentElement.dataset.theme = 'light';
+      }
+    </script>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
