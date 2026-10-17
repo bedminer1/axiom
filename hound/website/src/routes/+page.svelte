@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import * as Field from '$lib/components/ui/field/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
@@ -13,8 +14,37 @@
     'Other',
     'Not sure yet'
   ];
+  type Project = {
+    id: string;
+    name: string;
+    address: string;
+    owner: string;
+    noticeReference: string;
+    elevations: string[];
+    systems: string[];
+    usesDrone: boolean;
+  };
+  let project = $state<Project | null>(null);
+  let ready = $state(false);
+  let selectedElevations = $state<string[]>([...elevations]);
   let selectedSystems = $state<string[]>([]);
+  let otherSystem = $state('');
   let error = $state('');
+
+  onMount(() => {
+    try {
+      project = JSON.parse(localStorage.getItem('hound-pfi-project') ?? 'null');
+      if (project) {
+        selectedElevations = project.elevations;
+        selectedSystems = project.systems.filter((system) => systemChoices.includes(system));
+        otherSystem = project.systems.find((system) => !systemChoices.includes(system)) ?? '';
+        if (otherSystem) selectedSystems = [...selectedSystems, 'Other'];
+      }
+    } catch {
+      project = null;
+    }
+    ready = true;
+  });
 
   function saveProject(event: SubmitEvent) {
     event.preventDefault();
@@ -22,16 +52,16 @@
     const data = new FormData(form);
     const selectedElevations = data.getAll('elevations').map(String);
     const chosenSystems = data.getAll('systems').map(String);
-    const otherSystem = String(data.get('otherSystem') ?? '').trim();
-    const systems = chosenSystems.flatMap((item) => item === 'Other' ? (otherSystem ? [otherSystem] : []) : [item]);
+    const customSystem = String(data.get('otherSystem') ?? '').trim();
+    const systems = chosenSystems.flatMap((item) => item === 'Other' ? (customSystem ? [customSystem] : []) : [item]);
 
-    if (!selectedElevations.length || !systems.length || (chosenSystems.includes('Other') && !otherSystem)) {
+    if (!selectedElevations.length || !systems.length || (chosenSystems.includes('Other') && !customSystem)) {
       error = 'Choose at least one exterior type and describe “Other”.';
       return;
     }
 
-    const project = {
-      id: crypto.randomUUID(),
+    const updatedProject = {
+      id: project?.id ?? crypto.randomUUID(),
       name: String(data.get('projectName') ?? '').trim(),
       address: String(data.get('siteAddress') ?? '').trim(),
       owner: String(data.get('owner') ?? '').trim(),
@@ -40,21 +70,22 @@
       systems,
       usesDrone: data.get('usesDrone') === 'on'
     };
-    localStorage.setItem('hound-pfi-project', JSON.stringify(project));
+    localStorage.setItem('hound-pfi-project', JSON.stringify(updatedProject));
     goto('/checklist');
   }
 </script>
 
 <svelte:head>
-  <title>New project — Hound</title>
+  <title>{project ? 'Edit building' : 'New project'} — Hound</title>
   <meta name="description" content="Create a PFI inspection project." />
 </svelte:head>
 
 <main class="mx-auto max-w-6xl px-6 py-16 md:px-10 md:py-24">
+  {#if ready}
   <section class="mx-auto max-w-2xl">
     <p class="mb-5 text-xs font-semibold uppercase tracking-[0.24em] text-orange">PFI report</p>
     <h1 class="text-[clamp(2.75rem,7vw,5rem)] font-semibold leading-[0.96] tracking-[-0.075em]">
-      New project<span class="font-hand font-normal tracking-normal text-orange">.</span>
+      {project ? 'Edit building' : 'New project'}<span class="font-hand font-normal tracking-normal text-orange">.</span>
     </h1>
 
     <form
@@ -66,22 +97,22 @@
           <div class="grid gap-5 md:grid-cols-2">
             <Field.Field class="md:col-span-2">
               <Field.Label for="project-name">Building name <span class="text-orange">*</span></Field.Label>
-              <Input id="project-name" name="projectName" placeholder="e.g. Orchard Central" autocomplete="organization-title" required />
+              <Input id="project-name" name="projectName" value={project?.name ?? ''} placeholder="e.g. Orchard Central" autocomplete="organization-title" required />
             </Field.Field>
 
             <Field.Field class="md:col-span-2">
               <Field.Label for="site-address">Site address <span class="text-orange">*</span></Field.Label>
-              <Input id="site-address" name="siteAddress" placeholder="Street address" autocomplete="street-address" required />
+              <Input id="site-address" name="siteAddress" value={project?.address ?? ''} placeholder="Street address" autocomplete="street-address" required />
             </Field.Field>
 
             <Field.Field>
               <Field.Label for="owner">Owner / MCST <span class="text-ink/45">(optional)</span></Field.Label>
-              <Input id="owner" name="owner" placeholder="" autocomplete="organization" />
+              <Input id="owner" name="owner" value={project?.owner ?? ''} placeholder="" autocomplete="organization" />
             </Field.Field>
 
             <Field.Field>
               <Field.Label for="notice-reference">PFI notice ref <span class="text-ink/45">(optional)</span></Field.Label>
-              <Input id="notice-reference" name="noticeReference" placeholder="e.g. 2026/01/1234" />
+              <Input id="notice-reference" name="noticeReference" value={project?.noticeReference ?? ''} placeholder="e.g. 2026/01/1234" />
             </Field.Field>
 
             <Field.Field class="md:col-span-2">
@@ -90,7 +121,7 @@
                 <div class="grid grid-cols-2 gap-3 pt-3 sm:grid-cols-4">
                   {#each elevations as elevation}
                     <label class="flex min-h-11 items-center gap-2 rounded-lg border border-ink/15 px-3 text-sm">
-                      <input type="checkbox" name="elevations" value={elevation} checked class="accent-orange" />
+                      <input type="checkbox" name="elevations" value={elevation} bind:group={selectedElevations} class="accent-orange" />
                       {elevation}
                     </label>
                   {/each}
@@ -111,14 +142,14 @@
                   {/each}
                 </div>
                 {#if selectedSystems.includes('Other')}
-                  <Input class="mt-3" name="otherSystem" aria-label="Other exterior type" placeholder="Describe the exterior type" required />
+                  <Input class="mt-3" name="otherSystem" value={otherSystem} oninput={(event) => otherSystem = event.currentTarget.value} aria-label="Other exterior type" placeholder="Describe the exterior type" required />
                 {/if}
               </div>
             </Field.Field>
 
             <Field.Field class="md:col-span-2">
               <label class="flex min-h-11 items-center gap-3 text-sm" for="uses-drone">
-                <input id="uses-drone" type="checkbox" name="usesDrone" class="accent-orange" />
+                <input id="uses-drone" type="checkbox" name="usesDrone" checked={project?.usesDrone ?? false} class="accent-orange" />
                 Drone used for inspection
               </label>
             </Field.Field>
@@ -135,9 +166,10 @@
           type="submit"
           class="inline-flex min-h-11 items-center justify-center gap-3 rounded-full bg-ink px-5 text-xs font-semibold text-paper transition hover:bg-orange hover:text-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/25"
         >
-          Start inspection <span aria-hidden="true">→</span>
+          {project ? 'Save changes' : 'Start inspection'} <span aria-hidden="true">→</span>
         </button>
       </div>
     </form>
   </section>
+  {/if}
 </main>

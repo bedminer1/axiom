@@ -18,7 +18,8 @@
   let busy = $state<Record<string, boolean>>({});
   let errors = $state<Record<string, string>>({});
   const key = (section: string, elevation: string) => `${section}:${elevation}`;
-  const reviewed = $derived(Object.values(slots).filter((slot) => slot.reviewed).length);
+  const reviewed = $derived(project?.elevations.reduce((count, elevation) =>
+    count + Number(!!slots[key('visual', elevation)]?.reviewed) + Number(!!slots[key('close', elevation)]?.reviewed), 0) ?? 0);
   const total = $derived((project?.elevations.length ?? 0) * 2);
 
   function save() {
@@ -116,7 +117,7 @@
             </button>
           {/each}
         </nav>
-        <a class="mt-7 hidden text-xs text-ink/50 hover:text-orange md:block" href="/">Edit building details →</a>
+        <a class="mt-7 inline-block text-xs text-ink/50 hover:text-orange" href="/">Edit building details →</a>
       </aside>
 
       <article class="min-w-0 rounded-2xl border border-ink/10 bg-white/60 p-6 dark:bg-white/[0.03] md:p-9">
