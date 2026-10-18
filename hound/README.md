@@ -27,7 +27,7 @@ The current pfi-filter CLI does not run its optional YOLO detector: `--yolo` is 
 
 Photos, the optional floor plan, and edited observations are saved in this browser. Add a floor plan in Section 01 if available. Otherwise Section 03 shows an orientation sketch using the Section 02 elevation photos. Photo positions are guesses until checked; the sketch cannot establish building geometry or inspection coverage. Coverage is entered from measured façade and inspected areas in Section 03.
 
-Six illustrative JPEGs and their proposed demo sides are in [`website/static/demo/`](website/static/demo/README.md). Add `north-overview.jpg` to the North visual slot and the detail photos to the close-range section. These photos are not verified as one building.
+Six labelled illustrative JPEGs and a click-by-click walkthrough are in [`website/static/demo/`](website/static/demo/README.md). Start with the North visual overview and one rendered-wall crack close-up. The photos are not verified as one building.
 
 ## Hetzner deployment
 

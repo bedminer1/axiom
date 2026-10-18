@@ -422,14 +422,24 @@
                   <div class="flex items-center justify-between gap-3">
                     <h3 class="text-sm font-semibold">{section.id === 'visual' ? `${elevation} elevation` : `Close-range photo ${index + 1}`}</h3>
                     <span class={`text-xs ${slots[id]?.reviewed ? 'text-emerald-700 dark:text-emerald-400' : 'text-ink/45'}`}>
-                      {slots[id]?.reviewed ? 'Reviewed' : slots[id]?.name ? 'Review needed' : 'Photo needed'}
+                      {busy[id] ? 'Analyzing…' : slots[id]?.reviewed ? 'Reviewed' : slots[id]?.name ? 'Review needed' : 'Photo needed'}
                     </span>
                   </div>
                   <div class={`mt-4 grid gap-5 ${section.id === 'close' ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : 'sm:grid-cols-[11rem_minmax(0,1fr)]'}`}>
                     <div class={section.id === 'close' ? 'grid grid-cols-2 items-start gap-3' : ''}>
                       <div>
                       {#if urls[id]}
-                        <img src={urls[id]} alt={section.id === 'visual' ? `${elevation} elevation inspection` : `Close-range inspection ${index + 1}`} class="aspect-[4/3] w-full rounded-lg object-cover" />
+                        <div class="relative">
+                          <img src={urls[id]} alt={section.id === 'visual' ? `${elevation} elevation inspection` : `Close-range inspection ${index + 1}`} class="aspect-[4/3] w-full rounded-lg object-cover" />
+                          {#if busy[id]}
+                            <div class="absolute inset-0 grid place-items-center rounded-lg bg-ink/60 text-paper" role="status" aria-label="Analyzing photo">
+                              <div class="flex items-center gap-2 rounded-full bg-ink/80 px-4 py-2 text-xs font-semibold">
+                                <span class="h-4 w-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" aria-hidden="true"></span>
+                                Analyzing photo…
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
                       {:else}
                         <div class="grid aspect-[4/3] place-items-center rounded-lg border border-dashed border-ink/20 text-xs text-ink/40">No photo</div>
                       {/if}
@@ -467,7 +477,7 @@
                         value={slots[id]?.analysis ?? ''}
                         oninput={(event) => edit(id, 'analysis', event.currentTarget.value)}
                         class="mt-2 w-full rounded-lg border border-ink/15 bg-paper px-3 py-3 text-sm leading-6 outline-none focus-visible:border-orange"></textarea>
-                      <p class="mt-2 text-xs text-ink/45">{busy[id] ? 'Analyzing photo…' : slots[id]?.source === 'pfi-filter' ? 'PFI filter suggestion · confirm below' : slots[id]?.source ? 'SoCLaas suggestion · confirm below' : slots[id]?.name || ''}</p>
+                      <p class="mt-2 text-xs text-ink/45" aria-live="polite">{busy[id] ? 'Checking the image and drafting an observation…' : slots[id]?.source === 'pfi-filter' ? 'PFI filter suggestion · confirm below' : slots[id]?.source ? 'SoCLaas suggestion · confirm below' : slots[id]?.name || ''}</p>
                       {#if slots[id]?.photoDate || slots[id]?.storeysVisible != null}
                         <p class="mt-1 text-xs text-ink/45">{slots[id]?.photoDate ? `Photo date ${slots[id].photoDate}` : ''}{slots[id]?.photoDate && slots[id]?.storeysVisible != null ? ' · ' : ''}{slots[id]?.storeysVisible != null ? `About ${slots[id].storeysVisible} storeys visible` : ''}</p>
                       {/if}
