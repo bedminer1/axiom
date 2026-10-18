@@ -14,8 +14,8 @@ Environment=HOUND_API_ADDRESS=127.0.0.1:5050
 Environment=PFI_FILTER_DIR=/opt/hound/pfi-filter
 Environment=PFI_FILTER_PYTHON=/opt/hound/.venv/bin/python
 Environment=PYTHONDONTWRITEBYTECODE=1
-Environment=DEEPSEEK_ENV_FILE=%d/deepseek.env
-LoadCredential=deepseek.env:/etc/axiom-datadog.env
+Environment=SOCLAAS_ENV_FILE=%d/soclaas.env
+LoadCredential=soclaas.env:/etc/hound-soclaas.env
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

@@ -1,8 +1,4 @@
 datadog.properrobotics.org {
-    basic_auth {
-        hound __HOUND_PASSWORD_HASH__
-    }
-
     handle /api/* {
         reverse_proxy 127.0.0.1:5050
     }

@@ -15,6 +15,8 @@ rsync -az --delete --delay-updates website/build/ "$server:$site_dir/"
 rsync -az --delete --exclude '.git/' --exclude '.pfi-cache/' vendor/pfi-filter/ "$server:$remote_dir/pfi-filter/"
 rsync -az target/release/hound "$server:$remote_dir/hound"
 scp -q deploy/hound.service "$server:/etc/systemd/system/hound.service"
+scp -q deploy/caddy-site.caddy "$server:/root/hound-caddy-site.template"
+scp -q deploy/render-caddy.py "$server:/root/render-hound-caddy.py"
 
 ssh -o BatchMode=yes "$server" "
   id hound >/dev/null 2>&1 || useradd --system --home-dir '$remote_dir' --shell /usr/sbin/nologin hound
@@ -25,6 +27,10 @@ ssh -o BatchMode=yes "$server" "
   systemctl enable --now hound
   systemctl restart hound
   curl --retry 5 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5050/api/health
+  python3 /root/render-hound-caddy.py
+  caddy validate --config /etc/caddy/Caddyfile.hound-next
+  mv /etc/caddy/Caddyfile.hound-next /etc/caddy/Caddyfile
+  systemctl reload caddy
 "
 
 echo "Hound files deployed. Caddy serves $site_dir and proxies /api/* to 127.0.0.1:5050."

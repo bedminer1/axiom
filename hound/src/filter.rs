@@ -3,14 +3,9 @@ use serde_json::{Value, json};
 use std::{env, path::PathBuf, time::Duration};
 use tokio::{fs, process::Command, time::timeout};
 
-use crate::deepseek::DeepSeek;
+use crate::llm::Llm;
 
-async fn command(
-    python: &PathBuf,
-    filter_dir: &PathBuf,
-    model: &DeepSeek,
-    args: &[&str],
-) -> Result<()> {
+async fn command(python: &PathBuf, filter_dir: &PathBuf, model: &Llm, args: &[&str]) -> Result<()> {
     let mut process = Command::new(python);
     process
         .arg("-m")
@@ -38,7 +33,7 @@ pub async fn analyze(
     slot: &str,
     filename: Option<&str>,
     image: &[u8],
-    model: &DeepSeek,
+    model: &Llm,
 ) -> Result<Value> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let filter_dir = env::var_os("PFI_FILTER_DIR")

@@ -59,8 +59,10 @@
   const key = (section: string, elevation: string) => `${section}:${elevation}`;
   const closeIds = $derived(Object.keys(slots).filter((id) => id.startsWith('close:')));
   const hasVisualPhotos = $derived(project?.elevations.some((side) => !!urls[key('visual', side)]) ?? false);
-  const reviewed = $derived((project?.elevations.reduce((count, elevation) => count + Number(!!slots[key('visual', elevation)]?.reviewed), 0) ?? 0) + closeIds.filter((id) => slots[id].reviewed).length);
-  const total = $derived((project?.elevations.length ?? 0) + Math.max(1, closeIds.length));
+  const coveredSystems = $derived(project?.systems.filter((system) => closeIds.some((id) => slots[id].exteriorSystem === system && slots[id].reviewed)).length ?? 0);
+  const reviewed = $derived((project?.elevations.reduce((count, elevation) => count + Number(!!slots[key('visual', elevation)]?.reviewed), 0) ?? 0) + coveredSystems);
+  const total = $derived((project?.elevations.length ?? 0) + (project?.systems.length ?? 0));
+  const reportReady = $derived(total > 0 && reviewed === total && closeIds.every((id) => slots[id].reviewed));
   const maxStoreys = $derived(Math.max(0, ...Object.values(slots).map((slot) => slot.storeysVisible ?? 0)));
   const dateFrom = (stamp?: string) => /^\d{4}-\d{2}-\d{2}/.exec(stamp ?? '')?.[0] ?? '';
   const words = (text: string) => text.replaceAll('_', ' ');
@@ -168,7 +170,7 @@
   }
 
   async function exportReport() {
-    if (!project || exporting || reviewed !== total || !total) return;
+    if (!project || exporting || !reportReady) return;
     exporting = true;
     errors.report = '';
     try {
@@ -340,11 +342,11 @@
 
     <div class="grid gap-10 md:grid-cols-[13rem_minmax(0,1fr)]">
       <aside class="md:sticky md:top-8 md:self-start">
-        <p class="text-xs font-semibold">{reviewed} of {total} photos reviewed</p>
-        <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/10" role="progressbar" aria-label="Photos reviewed" aria-valuenow={reviewed} aria-valuemin="0" aria-valuemax={total}>
+        <p class="text-xs font-semibold">{reviewed} of {total} evidence areas reviewed</p>
+        <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/10" role="progressbar" aria-label="Evidence areas reviewed" aria-valuenow={reviewed} aria-valuemin="0" aria-valuemax={total}>
           <div class="h-full bg-orange" style={`width: ${total ? reviewed / total * 100 : 0}%`}></div>
         </div>
-        {#if total && reviewed === total}
+        {#if reportReady}
           <button type="button" onclick={exportReport} disabled={exporting}
             class="mt-5 w-full rounded-full bg-ink px-5 py-3 text-xs font-semibold text-paper hover:bg-orange hover:text-ink disabled:opacity-50">
             {exporting ? 'Preparing Word document…' : 'Download Word report'}
@@ -465,7 +467,7 @@
                         value={slots[id]?.analysis ?? ''}
                         oninput={(event) => edit(id, 'analysis', event.currentTarget.value)}
                         class="mt-2 w-full rounded-lg border border-ink/15 bg-paper px-3 py-3 text-sm leading-6 outline-none focus-visible:border-orange"></textarea>
-                      <p class="mt-2 text-xs text-ink/45">{busy[id] ? 'Analyzing photo…' : slots[id]?.source === 'pfi-filter' ? 'PFI filter suggestion · confirm below' : slots[id]?.source ? 'DeepSeek suggestion · confirm below' : slots[id]?.name || ''}</p>
+                      <p class="mt-2 text-xs text-ink/45">{busy[id] ? 'Analyzing photo…' : slots[id]?.source === 'pfi-filter' ? 'PFI filter suggestion · confirm below' : slots[id]?.source ? 'SoCLaas suggestion · confirm below' : slots[id]?.name || ''}</p>
                       {#if slots[id]?.photoDate || slots[id]?.storeysVisible != null}
                         <p class="mt-1 text-xs text-ink/45">{slots[id]?.photoDate ? `Photo date ${slots[id].photoDate}` : ''}{slots[id]?.photoDate && slots[id]?.storeysVisible != null ? ' · ' : ''}{slots[id]?.storeysVisible != null ? `About ${slots[id].storeysVisible} storeys visible` : ''}</p>
                       {/if}
@@ -485,7 +487,7 @@
                         <label class="mt-3 block text-xs font-semibold">Checks still needed<input value={slots[id]?.verification ?? ''} oninput={(event) => edit(id, 'verification', event.currentTarget.value)} placeholder="e.g. tapping, fixing check" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>
                         {#if slots[id]?.classification === 'Require Repair' || slots[id]?.classification === 'Unsafe'}
                           <div class="mt-5 border-t border-ink/10 pt-4">
-                            <p class="text-xs font-semibold">Remedial action <span class="font-normal text-ink/45">· {slots[id]?.repairSuggestion ? 'DeepSeek draft' : 'draft'} for review</span></p>
+                            <p class="text-xs font-semibold">Remedial action <span class="font-normal text-ink/45">· {slots[id]?.repairSuggestion ? 'SoCLaas draft' : 'draft'} for review</span></p>
                             <div class="mt-3 grid gap-3 sm:grid-cols-2">
                               <label class="text-xs font-semibold">Possible cause<input value={slots[id]?.possibleCause ?? ''} oninput={(event) => edit(id, 'possibleCause', event.currentTarget.value)} placeholder="If established" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>
                               <label class="text-xs font-semibold">Timeframe<input value={slots[id]?.timeframe ?? ''} oninput={(event) => edit(id, 'timeframe', event.currentTarget.value)} placeholder="e.g. within 3 months" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>

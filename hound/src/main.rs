@@ -1,5 +1,5 @@
-mod deepseek;
 mod filter;
+mod llm;
 
 use axum::{
     Json, Router,
@@ -9,7 +9,7 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use deepseek::DeepSeek;
+use llm::Llm;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::PathBuf, process::Stdio, sync::Arc};
@@ -17,7 +17,7 @@ use tokio::{net::TcpListener, process::Command};
 
 #[derive(Clone)]
 struct AppState {
-    model: DeepSeek,
+    model: Llm,
 }
 
 struct ApiError(anyhow::Error);
@@ -30,7 +30,7 @@ impl From<anyhow::Error> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = if self.0.to_string().contains("DeepSeek") {
+        let status = if self.0.to_string().contains("SoCLaas") {
             StatusCode::BAD_GATEWAY
         } else {
             StatusCode::BAD_REQUEST
@@ -50,7 +50,7 @@ struct PhotoRequest {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
-        model: DeepSeek::from_environment()?,
+        model: Llm::from_environment()?,
     });
     let app = Router::new()
         .route(
@@ -145,7 +145,7 @@ async fn analyze_photo(
         Ok(value) => value,
         Err(error) => {
             eprintln!("pfi-filter unavailable: {error:#}");
-            json!({"analysis": "", "source": "deepseek-fallback"})
+            json!({"analysis": "", "source": "llm-fallback"})
         }
     };
     if result["analysis"].as_str().unwrap_or("").is_empty() {
@@ -155,7 +155,7 @@ async fn analyze_photo(
                 .analyze_photo(&request.slot, &request.image)
                 .await?
         );
-        result["source"] = json!("deepseek-fallback");
+        result["source"] = json!("llm-fallback");
     }
     let observation = result["analysis"].as_str().unwrap_or("");
     let defects = &result["filter"]["defects"];
