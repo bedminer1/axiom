@@ -1,17 +1,19 @@
 mod deepseek;
+mod filter;
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use deepseek::DeepSeek;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::sync::Arc;
-use tokio::net::TcpListener;
+use std::{path::PathBuf, process::Stdio, sync::Arc};
+use tokio::{net::TcpListener, process::Command};
 
 #[derive(Clone)]
 struct AppState {
@@ -41,6 +43,7 @@ impl IntoResponse for ApiError {
 struct PhotoRequest {
     slot: String,
     image: String,
+    project: Value,
 }
 
 #[tokio::main]
@@ -54,11 +57,31 @@ async fn main() -> anyhow::Result<()> {
             get(|| async { Json(json!({"status": "ok"})) }),
         )
         .route("/api/photo/analyze", post(analyze_photo))
+        .layer(DefaultBodyLimit::max(25_000_000))
         .with_state(state);
     let address = std::env::var("HOUND_API_ADDRESS").unwrap_or_else(|_| "127.0.0.1:5050".into());
     let listener = TcpListener::bind(&address).await?;
-    println!("Hound photo API listening on {address}");
-    axum::serve(listener, app).await?;
+    let site = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("website");
+    let vite = site.join("node_modules/vite/bin/vite.js");
+    anyhow::ensure!(
+        vite.exists(),
+        "website dependencies missing; run npm install in website/"
+    );
+    let mut website = Command::new("node")
+        .arg(vite)
+        .arg("--host")
+        .arg("127.0.0.1")
+        .current_dir(&site)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()?;
+    println!("Hound API listening on {address}; starting website…");
+    tokio::select! {
+        result = axum::serve(listener, app) => result?,
+        result = website.wait() => anyhow::bail!("website stopped: {}", result?),
+        _ = tokio::signal::ctrl_c() => {}
+    }
     Ok(())
 }
 
@@ -83,7 +106,39 @@ async fn analyze_photo(
     {
         return Err(ApiError(anyhow::anyhow!("unsupported photo format")));
     }
-    Ok(Json(
-        json!({"analysis": state.model.analyze_photo(&request.slot, &request.image).await?}),
-    ))
+    let (section, elevation) = request
+        .slot
+        .split_once(':')
+        .ok_or_else(|| ApiError(anyhow::anyhow!("invalid photo slot")))?;
+    if !["visual", "close"].contains(&section)
+        || !request.project["elevations"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|value| value == elevation))
+    {
+        return Err(ApiError(anyhow::anyhow!(
+            "photo slot is not in this project"
+        )));
+    }
+    let (_, encoded) = request.image.split_once(',').expect("validated data URL");
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| ApiError(anyhow::anyhow!("invalid photo data")))?;
+    let filtered = filter::analyze(&request.project, &request.slot, &bytes, &state.model).await;
+    let mut result = match filtered {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("pfi-filter unavailable: {error:#}");
+            json!({"analysis": "", "source": "deepseek-fallback"})
+        }
+    };
+    if result["analysis"].as_str().unwrap_or("").is_empty() {
+        result["analysis"] = json!(
+            state
+                .model
+                .analyze_photo(&request.slot, &request.image)
+                .await?
+        );
+        result["source"] = json!("deepseek-fallback");
+    }
+    Ok(Json(result))
 }

@@ -3,3 +3,5 @@
 /website/.svelte-kit/
 /website/build/
 /website/node_modules/
+/.venv/
+/models/*.onnx

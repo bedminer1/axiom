@@ -1,0 +1,8 @@
+{
+  "source": "Utbird/crack_detection",
+  "revision": "a5382b48f32fab49f2881b18bc3125592c318c64",
+  "checkpoint_sha256": "386155cae09bee6af1ce99608fc42a32cafd40a25362b80037b4fa54f6999719",
+  "onnx_sha256": "d5425d8a19bb267a19544d2e8d3f5253198df3507bddc8d3fb5f275fb9159943",
+  "runtime_version": "1.30.0",
+  "input_size": 640
+}

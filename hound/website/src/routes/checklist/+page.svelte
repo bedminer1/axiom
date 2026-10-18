@@ -3,7 +3,18 @@
   import { photoStore } from '$lib/photo-store';
 
   type Project = { id: string; name: string; address: string; elevations: string[]; systems: string[] };
-  type Slot = { name: string; analysis: string; reviewed: boolean };
+  type FilterResult = {
+    decision?: string;
+    decision_conf?: number;
+    reasons?: string[];
+    shot_type?: string;
+    location?: { level_from?: number; level_to?: number; zone?: string };
+    quality?: { w?: number; h?: number; blur_ok?: boolean; exposure_ok?: boolean };
+    defects?: { component: string; condition: string; confidence: number }[];
+    question?: string;
+    match?: { status?: string; hint?: string; score?: number };
+  };
+  type Slot = { name: string; analysis: string; reviewed: boolean; source?: string; filter?: FilterResult };
   const sections = [
     { id: 'building', number: '01', title: 'Building' },
     { id: 'visual', number: '02', title: 'Visual inspection' },
@@ -50,11 +61,13 @@
       const response = await fetch('/api/photo/analyze', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slot: `${section} inspection, ${elevation} elevation`, image })
+        body: JSON.stringify({ slot: id, project, image })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Analysis failed.');
       slots[id].analysis = result.analysis;
+      slots[id].source = result.source;
+      slots[id].filter = result.filter;
       save();
     } catch (error) {
       errors[id] = error instanceof Error ? error.message : 'Analysis failed. Add an observation manually.';
@@ -153,7 +166,7 @@
                       {/if}
                       <label class="mt-2 inline-block cursor-pointer text-xs font-semibold text-orange hover:underline">
                         {slots[id]?.name ? 'Replace photo' : 'Add photo'}
-                        <input class="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                        <input class="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={busy[id]}
                           onchange={(event) => { addPhoto(section.id, elevation, event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
                       </label>
                     </div>
@@ -164,13 +177,30 @@
                         oninput={(event) => { if (slots[id]) { slots[id].analysis = event.currentTarget.value; slots[id].reviewed = false; save(); } }}
                         class="mt-2 w-full rounded-lg border border-ink/15 bg-paper px-3 py-3 text-sm leading-6 outline-none focus-visible:border-orange"></textarea>
                       <div class="mt-2 flex items-center justify-between gap-3">
-                        <span class="text-xs text-ink/45">{busy[id] ? 'Analyzing photo…' : slots[id]?.name || ''}</span>
+                        <span class="text-xs text-ink/45">{busy[id] ? 'Analyzing photo…' : slots[id]?.source === 'pfi-filter' ? 'PFI filter suggestion' : slots[id]?.source ? 'DeepSeek fallback' : slots[id]?.name || ''}</span>
                         {#if slots[id]?.analysis?.trim()}
                           <button type="button" disabled={slots[id].reviewed}
                             onclick={() => { slots[id].reviewed = true; save(); }}
                             class="text-xs font-semibold text-orange disabled:text-ink/35">{slots[id].reviewed ? 'Reviewed' : 'Mark reviewed'}</button>
                         {/if}
                       </div>
+                      {#if slots[id]?.filter}
+                        {@const result = slots[id].filter}
+                        <details class="mt-3 border-t border-ink/10 pt-3 text-xs text-ink/65">
+                          <summary class="cursor-pointer font-semibold">Photo details · {result.decision ?? 'review'} · {result.match?.status ?? 'unmatched'}</summary>
+                          <div class="mt-3 space-y-2 leading-5">
+                            {#if result.decision_conf != null}<p>Decision confidence: {Math.round(result.decision_conf * 100)}%</p>{/if}
+                            {#if result.match?.score != null}<p>Slot match: {Math.round(result.match.score * 100)}%</p>{/if}
+                            {#if result.shot_type}<p>Shot: {result.shot_type.replaceAll('_', ' ')}</p>{/if}
+                            {#if result.location?.level_from != null}<p>Level: {result.location.level_from}{result.location.level_to != null && result.location.level_to !== result.location.level_from ? `–${result.location.level_to}` : ''}{result.location.zone ? ` · ${result.location.zone}` : ''}</p>{/if}
+                            {#if result.quality}<p>Image: {result.quality.w} × {result.quality.h}{result.quality.blur_ok === false ? ' · blurry' : ''}{result.quality.exposure_ok === false ? ' · exposure issue' : ''}</p>{/if}
+                            {#if result.defects?.length}<p>Visible defects: {result.defects.map((defect) => `${defect.component} · ${defect.condition} (${Math.round(defect.confidence * 100)}%)`).join(', ')}</p>{/if}
+                            {#if result.reasons?.length}<p>Filter notes: {result.reasons.join(', ').replaceAll('_', ' ')}</p>{/if}
+                            {#if result.match?.hint}<p>{result.match.hint}</p>{/if}
+                            {#if result.question}<p>Check: {result.question}</p>{/if}
+                          </div>
+                        </details>
+                      {/if}
                       {#if errors[id]}<p class="mt-2 text-xs text-red-700" role="alert">{errors[id]}</p>{/if}
                     </div>
                   </div>
