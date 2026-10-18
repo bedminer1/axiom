@@ -24,7 +24,7 @@ ssh -o BatchMode=yes "$server" "
   systemctl daemon-reload
   systemctl enable --now hound
   systemctl restart hound
-  curl -fsS http://127.0.0.1:5050/api/health
+  curl --retry 5 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5050/api/health
 "
 
 echo "Hound files deployed. Caddy serves $site_dir and proxies /api/* to 127.0.0.1:5050."

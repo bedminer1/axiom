@@ -9,6 +9,7 @@
     visualDate?: string; visualDuration?: string; visualMethod?: string; visualLimitations?: string;
     closeDate?: string; closeDuration?: string; closeMethod?: string; closeBasis?: string;
     closeCoverage?: Record<string, number>; previousCondition?: string; inspector?: string;
+    closeAreas?: Record<string, { facade?: number; inspected?: number }>;
     visualDateAuto?: boolean; closeDateAuto?: boolean;
   };
   type FilterResult = {
@@ -34,6 +35,7 @@
     immediateAction?: string; supervision?: string;
     photoDate?: string; storeysVisible?: number;
     side?: string; mapX?: number; mapY?: number; mapSource?: string;
+    exteriorSystem?: string;
     repairSuggestion?: { recommendation?: string; timeframe?: string; immediate_action?: string };
   };
   const sections = [
@@ -62,6 +64,33 @@
   const maxStoreys = $derived(Math.max(0, ...Object.values(slots).map((slot) => slot.storeysVisible ?? 0)));
   const dateFrom = (stamp?: string) => /^\d{4}-\d{2}-\d{2}/.exec(stamp ?? '')?.[0] ?? '';
   const words = (text: string) => text.replaceAll('_', ' ');
+  function guessSystem(elements: string[] = []) {
+    const seen = elements.join(' ').toLowerCase();
+    const match = project?.systems.find((system) => {
+      const value = system.toLowerCase();
+      return (/(glass|curtain)/.test(value) && /(glass|curtain)/.test(seen)) ||
+        (value.includes('window') && seen.includes('window')) ||
+        (/(concrete|plaster)/.test(value) && /(concrete|plaster)/.test(seen)) ||
+        (/(brick|stone)/.test(value) && /(brick|stone|masonry)/.test(seen)) ||
+        (value.includes('metal') && /(metal|cladding)/.test(seen));
+    });
+    return match || (project?.systems.length === 1 ? project.systems[0] : '');
+  }
+  function setCoverage(side: string, field: 'facade' | 'inspected', input: string) {
+    if (!project) return;
+    project.closeAreas ??= {};
+    project.closeCoverage ??= {};
+    project.closeAreas[side] = { ...project.closeAreas[side], [field]: input === '' ? undefined : Number(input) };
+    const { facade, inspected } = project.closeAreas[side];
+    if (facade && inspected != null && inspected <= facade) project.closeCoverage[side] = Math.round(inspected / facade * 1000) / 10;
+    else delete project.closeCoverage[side];
+    localStorage.setItem('hound-pfi-project', JSON.stringify(project));
+  }
+  function changeSystem(id: string, system: string) {
+    slots[id].exteriorSystem = system;
+    slots[id].reviewed = false;
+    save();
+  }
   const sides = ['North', 'East', 'South', 'West'];
   const asSide = (value?: string) => sides.find((side) => side.toLowerCase() === value?.toLowerCase() || side[0].toLowerCase() === value?.toLowerCase()) ?? '';
   function mapGuess(name: string, side: string) {
@@ -182,7 +211,7 @@
     save();
   }
 
-  async function addPhoto(section: string, elevation: string, file?: File) {
+  async function addPhoto(section: string, elevation: string, file?: File, exteriorSystem = '') {
     if (!file) return;
     const id = key(section, elevation);
     if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) || file.size > 12_000_000) {
@@ -193,7 +222,7 @@
     busy[id] = true;
     if (urls[id]) URL.revokeObjectURL(urls[id]);
     urls[id] = URL.createObjectURL(file);
-    slots[id] = { name: file.name, analysis: '', reviewed: false };
+    slots[id] = { name: file.name, analysis: '', reviewed: false, exteriorSystem: exteriorSystem || slots[id]?.exteriorSystem };
     save();
     try {
       await photoStore(`${project!.id}:${id}`, file);
@@ -213,6 +242,7 @@
       slots[id].analysis = result.analysis;
       slots[id].source = result.source;
       slots[id].filter = result.filter;
+      if (section === 'close' && !slots[id].exteriorSystem) slots[id].exteriorSystem = guessSystem(result.filter?.elements);
       slots[id].repairSuggestion = result.repair_suggestion;
       const location = result.filter?.location;
       if (location?.level_from != null) slots[id].level = location.level_to != null && location.level_to !== location.level_from ? `${location.level_from}–${location.level_to}` : String(location.level_from);
@@ -348,7 +378,7 @@
                 {#if maxStoreys}<div><dt class="text-xs text-ink/50">Storeys</dt><dd class="mt-1">At least {maxStoreys} visible in photos · AI estimate</dd></div>{/if}
                 <div><dt class="text-xs text-ink/50">Visual inspection</dt><dd class="mt-1">{project.visualDate || 'Date not entered'}{project.visualDateAuto ? ' (suggested)' : ''} · {project.visualMethod || 'Method not entered'}</dd></div>
                 <div><dt class="text-xs text-ink/50">Close-range inspection</dt><dd class="mt-1">{project.closeDate || 'Date not entered'}{project.closeDateAuto ? ' (suggested)' : ''} · {project.closeMethod || 'Method not entered'}</dd></div>
-                <div class="sm:col-span-2"><dt class="text-xs text-ink/50">Close-range area by elevation</dt><dd class="mt-1">{project.elevations.map((elevation) => `${elevation} ${project?.closeCoverage?.[elevation] ?? 0}%`).join(' · ')}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-xs text-ink/50">Close-range coverage</dt><dd class="mt-1">{project.elevations.map((elevation) => `${elevation}: ${project?.closeCoverage?.[elevation] != null ? `${project.closeCoverage[elevation]}%` : 'not measured'}`).join(' · ')}</dd></div>
               </dl>
               <div class="border-t border-ink/10 pt-6">
                 <div class="flex flex-wrap items-center justify-between gap-3">
@@ -361,8 +391,28 @@
             {:else}
               {#if section.id === 'close'}
                 <p class="border-b border-ink/10 py-5 text-xs text-ink/50">{planName ? `Locations on ${planName}` : hasVisualPhotos ? 'Suggested locations on a sketch from Section 02 photos' : 'Add visual photos in Section 02 to create the location sketch'}</p>
-                <label class="mt-5 inline-flex cursor-pointer rounded-full bg-ink px-5 py-3 text-xs font-semibold text-paper hover:bg-orange hover:text-ink">Add close-range photo<input class="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={(event) => { void addPhoto('close', crypto.randomUUID(), event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} /></label>
-                {#if !closeIds.length}<p class="mt-5 text-sm text-ink/50">Add a detail photo to start this section.</p>{/if}
+                <div class="mt-5 space-y-2">
+                  {#each project.systems as system}
+                    <div class="flex items-center justify-between gap-3 rounded-lg border border-ink/10 px-4 py-3 text-sm">
+                      <span>{system} <span class="text-xs text-ink/45">· {closeIds.filter((id) => slots[id]?.exteriorSystem === system).length} photos</span></span>
+                      <label class="shrink-0 cursor-pointer text-xs font-semibold text-orange">Add photo<input class="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={(event) => { void addPhoto('close', crypto.randomUUID(), event.currentTarget.files?.[0], system); event.currentTarget.value = ''; }} /></label>
+                    </div>
+                  {/each}
+                </div>
+                <details class="mt-6 border-b border-ink/10 pb-5 text-sm">
+                  <summary class="cursor-pointer font-semibold">Close-range coverage <span class="font-normal text-ink/45">· measured area by elevation</span></summary>
+                  <p class="mt-3 text-xs text-ink/55">Enter façade and inspected areas from the elevation plan. Coverage is calculated for each side.</p>
+                  <div class="mt-4 space-y-3">
+                    {#each project.elevations as side}
+                      <div class="grid items-end gap-2 sm:grid-cols-[5rem_1fr_1fr_4rem]">
+                        <span class="text-xs font-semibold">{side}</span>
+                        <label class="text-xs">Façade area (m²)<input type="number" min="0" step="0.1" value={project.closeAreas?.[side]?.facade ?? ''} oninput={(event) => setCoverage(side, 'facade', event.currentTarget.value)} class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2 text-sm" /></label>
+                        <label class="text-xs">Inspected area (m²)<input type="number" min="0" max={project.closeAreas?.[side]?.facade} step="0.1" value={project.closeAreas?.[side]?.inspected ?? ''} oninput={(event) => setCoverage(side, 'inspected', event.currentTarget.value)} class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2 text-sm" /></label>
+                        <span class="pb-2 text-xs">{project.closeAreas?.[side]?.facade && (project.closeAreas?.[side]?.inspected ?? 0) > project.closeAreas[side].facade! ? 'Check areas' : project.closeCoverage?.[side] != null ? `${project.closeCoverage[side]}%` : '—'}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </details>
               {/if}
               {#each section.id === 'visual' ? project.elevations : closeIds as elevation, index}
                 {@const id = section.id === 'visual' ? key('visual', elevation) : elevation}
@@ -421,7 +471,10 @@
                       {/if}
                       {#if slots[id]?.name}
                         <div class="mt-5 grid gap-3 sm:grid-cols-2">
-                          {#if section.id === 'close'}<label class="text-xs font-semibold">Side<select value={slots[id]?.side ?? ''} onchange={(event) => changeSide(id, event.currentTarget.value)} class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal"><option value="">Unknown</option>{#each sides as side}<option>{side}</option>{/each}</select></label>{/if}
+                          {#if section.id === 'close'}
+                            <label class="text-xs font-semibold">Exterior system<select value={slots[id]?.exteriorSystem ?? ''} onchange={(event) => changeSystem(id, event.currentTarget.value)} class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal"><option value="">Choose</option>{#each project.systems as system}<option value={system}>{system}</option>{/each}</select></label>
+                            <label class="text-xs font-semibold">Side<select value={slots[id]?.side ?? ''} onchange={(event) => changeSide(id, event.currentTarget.value)} class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal"><option value="">Unknown</option>{#each sides as side}<option>{side}</option>{/each}</select></label>
+                          {/if}
                           <label class="text-xs font-semibold">Level / storey<input value={slots[id]?.level ?? ''} oninput={(event) => edit(id, 'level', event.currentTarget.value)} placeholder="If identifiable" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>
                           <label class="text-xs font-semibold">Zone<input value={slots[id]?.zone ?? ''} oninput={(event) => edit(id, 'zone', event.currentTarget.value)} placeholder="e.g. bay near lift lobby" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>
                           <label class="text-xs font-semibold">Visible defect<input value={slots[id]?.defectType ?? ''} oninput={(event) => edit(id, 'defectType', event.currentTarget.value)} placeholder="None visible" class="mt-1 w-full rounded-lg border border-ink/15 bg-paper px-3 py-2.5 text-sm font-normal" /></label>

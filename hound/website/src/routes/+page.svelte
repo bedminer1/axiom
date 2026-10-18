@@ -26,6 +26,7 @@
     visualDate?: string; visualDuration?: string; visualMethod?: string; visualLimitations?: string;
     closeDate?: string; closeDuration?: string; closeMethod?: string; closeBasis?: string;
     closeCoverage?: Record<string, number>; previousCondition?: string; inspector?: string;
+    closeAreas?: Record<string, { facade?: number; inspected?: number }>;
     visualDateAuto?: boolean; closeDateAuto?: boolean;
     nameAuto?: boolean;
   };
@@ -47,10 +48,12 @@
   let closeDateValue = $state('');
   let visualDateAuto = $state(true);
   let closeDateAuto = $state(true);
+  let inspectorValue = $state('');
 
   onMount(() => {
     try {
       project = JSON.parse(localStorage.getItem('hound-pfi-project') ?? 'null');
+      inspectorValue = project?.inspector || localStorage.getItem('hound-inspector-name') || '';
       if (project) {
         nameValue = project.name || nameFromAddress(project.address);
         addressValue = project.address;
@@ -105,13 +108,15 @@
       closeDuration: String(data.get('closeDuration') ?? '').trim(),
       closeMethod: String(data.get('closeMethod') ?? '').trim(),
       closeBasis: String(data.get('closeBasis') ?? '').trim(),
-      closeCoverage: Object.fromEntries(selectedElevations.map((elevation) => [elevation, Number(data.get(`coverage-${elevation}`) || 0)])),
+      closeCoverage: project?.closeCoverage ?? {},
+      closeAreas: project?.closeAreas ?? {},
       previousCondition: String(data.get('previousCondition') ?? '').trim(),
       inspector: String(data.get('inspector') ?? '').trim(),
       visualDateAuto,
       closeDateAuto
     };
     localStorage.setItem('hound-pfi-project', JSON.stringify(updatedProject));
+    if (updatedProject.inspector) localStorage.setItem('hound-inspector-name', updatedProject.inspector);
     goto('/checklist');
   }
 </script>
@@ -141,19 +146,14 @@
               <Input id="site-address" name="siteAddress" value={addressValue} oninput={(event) => { addressValue = event.currentTarget.value; if (!nameEdited) nameValue = nameFromAddress(addressValue); }} placeholder="Street address" autocomplete="street-address" required />
             </Field.Field>
 
-            <Field.Field class="md:col-span-2">
+            <Field.Field>
               <Field.Label for="project-name">Building name or label <span class="text-orange">*</span></Field.Label>
               <Input id="project-name" name="projectName" value={nameValue} oninput={(event) => { nameValue = event.currentTarget.value; nameEdited = true; }} placeholder="Suggested from address" autocomplete="organization-title" required />
             </Field.Field>
 
             <Field.Field>
-              <Field.Label for="owner">Owner / MCST <span class="text-ink/45">(optional)</span></Field.Label>
-              <Input id="owner" name="owner" value={project?.owner ?? ''} placeholder="" autocomplete="organization" />
-            </Field.Field>
-
-            <Field.Field>
-              <Field.Label for="notice-reference">PFI notice ref <span class="text-ink/45">(optional)</span></Field.Label>
-              <Input id="notice-reference" name="noticeReference" value={project?.noticeReference ?? ''} placeholder="e.g. 2026/01/1234" />
+              <Field.Label for="inspector">Inspector</Field.Label>
+              <Input id="inspector" name="inspector" value={inspectorValue} oninput={(event) => inspectorValue = event.currentTarget.value} autocomplete="name" placeholder="Your name" />
             </Field.Field>
 
             <Field.Field class="md:col-span-2">
@@ -173,7 +173,6 @@
             <Field.Field class="md:col-span-2">
               <div role="group" aria-labelledby="systems-label">
                 <Field.Label id="systems-label">What makes up the building’s exterior? <span class="text-orange">*</span></Field.Label>
-                <p class="mt-2 text-xs text-ink/55">Select all that apply.</p>
                 <div class="mt-3 grid gap-2 sm:grid-cols-2">
                   {#each systemChoices as system}
                     <label class="flex min-h-11 items-center gap-3 rounded-lg border border-ink/15 px-3 text-sm">
@@ -188,16 +187,13 @@
               </div>
             </Field.Field>
 
-            <Field.Field class="md:col-span-2">
-              <label class="flex min-h-11 items-center gap-3 text-sm" for="uses-drone">
-                <input id="uses-drone" type="checkbox" name="usesDrone" checked={project?.usesDrone ?? false} class="accent-orange" />
-                Drone used for inspection
-              </label>
-            </Field.Field>
-
-            <div class="md:col-span-2 border-t border-ink/10 pt-5"><h2 class="text-sm font-semibold">Inspection details</h2></div>
-            <Field.Field><Field.Label for="inspector">Inspector</Field.Label><Input id="inspector" name="inspector" value={project?.inspector ?? ''} /></Field.Field>
-            <Field.Field><Field.Label for="previous-condition">Previous inspection findings</Field.Label><Input id="previous-condition" name="previousCondition" value={project?.previousCondition ?? ''} placeholder="If available" /></Field.Field>
+            <details class="md:col-span-2 border-t border-ink/10 pt-5">
+              <summary class="cursor-pointer text-sm font-semibold">Report details <span class="font-normal text-ink/45">· optional</span></summary>
+              <div class="mt-5 grid gap-5 md:grid-cols-2">
+            <Field.Field><Field.Label for="owner">Owner / MCST</Field.Label><Input id="owner" name="owner" value={project?.owner ?? ''} autocomplete="organization" /></Field.Field>
+            <Field.Field><Field.Label for="notice-reference">PFI notice reference</Field.Label><Input id="notice-reference" name="noticeReference" value={project?.noticeReference ?? ''} /></Field.Field>
+            <Field.Field class="md:col-span-2"><Field.Label for="previous-condition">Findings from the last PFI report</Field.Label><textarea id="previous-condition" name="previousCondition" rows="3" placeholder="Paste a brief summary, if available" class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">{project?.previousCondition ?? ''}</textarea></Field.Field>
+            <Field.Field class="md:col-span-2"><label class="flex min-h-11 items-center gap-3 text-sm" for="uses-drone"><input id="uses-drone" type="checkbox" name="usesDrone" checked={project?.usesDrone ?? false} class="accent-orange" />Drone used for inspection</label></Field.Field>
             <Field.Field><Field.Label for="visual-date">Visual inspection date {visualDateAuto ? '(suggested)' : ''}</Field.Label><Input id="visual-date" type="date" name="visualDate" value={visualDateValue} oninput={(event) => { visualDateValue = event.currentTarget.value; visualDateAuto = false; }} /></Field.Field>
             <Field.Field><Field.Label for="visual-duration">Visual inspection duration</Field.Label><Input id="visual-duration" name="visualDuration" value={project?.visualDuration ?? ''} placeholder="e.g. 2 days" /></Field.Field>
             <Field.Field class="md:col-span-2"><Field.Label for="visual-method">Visual inspection method</Field.Label><Input id="visual-method" name="visualMethod" value={project?.visualMethod ?? ''} placeholder="e.g. Ground and drone survey" /></Field.Field>
@@ -206,11 +202,8 @@
             <Field.Field><Field.Label for="close-duration">Close-range inspection duration</Field.Label><Input id="close-duration" name="closeDuration" value={project?.closeDuration ?? ''} placeholder="e.g. 1 day" /></Field.Field>
             <Field.Field class="md:col-span-2"><Field.Label for="close-method">Close-range method and tools</Field.Label><Input id="close-method" name="closeMethod" value={project?.closeMethod ?? ''} placeholder="e.g. Gondola access, visual and tapping checks" /></Field.Field>
             <Field.Field class="md:col-span-2"><Field.Label for="close-basis">Why these close-range areas?</Field.Label><Input id="close-basis" name="closeBasis" value={project?.closeBasis ?? ''} placeholder="e.g. Representative façade types and visual defects" /></Field.Field>
-            <div class="md:col-span-2 grid gap-3 sm:grid-cols-4">
-              {#each selectedElevations as elevation}
-                <Field.Field><Field.Label for={`coverage-${elevation}`}>{elevation} close-range area %</Field.Label><Input id={`coverage-${elevation}`} type="number" min="0" max="100" step="0.1" name={`coverage-${elevation}`} value={project?.closeCoverage?.[elevation] ?? ''} /></Field.Field>
-              {/each}
-            </div>
+              </div>
+            </details>
           </div>
         </Field.Group>
       </Field.Set>

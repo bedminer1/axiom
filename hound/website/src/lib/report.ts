@@ -7,6 +7,7 @@ type Project = {
   visualDate?: string; visualDuration?: string; visualMethod?: string; visualLimitations?: string;
   closeDate?: string; closeDuration?: string; closeMethod?: string; closeBasis?: string;
   closeCoverage?: Record<string, number>; previousCondition?: string; inspector?: string;
+  closeAreas?: Record<string, { facade?: number; inspected?: number }>;
   visualDateAuto?: boolean; closeDateAuto?: boolean;
 };
 type Slot = {
@@ -16,6 +17,7 @@ type Slot = {
   immediateAction?: string; supervision?: string;
   photoDate?: string; storeysVisible?: number;
   side?: string; mapX?: number; mapY?: number; mapSource?: string;
+  exteriorSystem?: string;
 };
 type Entry = { id: string; number: string; section: string; side: string; slot: Slot };
 
@@ -132,7 +134,7 @@ export async function downloadReport(project: Project, slots: Record<string, Slo
         ['Date and duration', `${value(project.closeDate)}${project.closeDateAuto ? ' (suggested)' : ''} · ${value(project.closeDuration)}`],
         ['Method, tools and equipment', value(project.closeMethod)],
         ['Inspection personnel', value(project.inspector)],
-        ...project.elevations.map((elevation): [string, string] => [`${elevation} inspected area`, project.closeCoverage?.[elevation] ? `${project.closeCoverage?.[elevation]}% (reviewer entered)` : 'Not recorded'])
+        ...project.elevations.map((elevation): [string, string] => [`${elevation} inspected area`, project.closeCoverage?.[elevation] != null ? `${project.closeCoverage[elevation]}%${project.closeAreas?.[elevation]?.facade ? ' (from measured areas)' : ' (previously entered)'}` : 'Not recorded'])
       ]),
       heading('Close-range photo locations', HeadingLevel.HEADING_2),
       markedPlan,
@@ -144,6 +146,7 @@ export async function downloadReport(project: Project, slots: Record<string, Slo
       await photoParagraph(project, entry),
       table([
         ['Location', `${entry.side} · Level ${value(entry.slot.level)} · ${value(entry.slot.zone)}${planPosition(entry)}`],
+        ...(section === 'close' ? [['Exterior system', value(entry.slot.exteriorSystem)] as [string, string]] : []),
         ['Photo date', value(entry.slot.photoDate)],
         ['Storeys visible (AI estimate)', entry.slot.storeysVisible != null ? String(entry.slot.storeysVisible) : 'Not recorded'],
         ['Observation', entry.slot.analysis.trim()],
