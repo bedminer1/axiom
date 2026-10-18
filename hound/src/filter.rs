@@ -33,7 +33,13 @@ async fn command(
     Ok(())
 }
 
-pub async fn analyze(project: &Value, slot: &str, image: &[u8], model: &DeepSeek) -> Result<Value> {
+pub async fn analyze(
+    project: &Value,
+    slot: &str,
+    filename: Option<&str>,
+    image: &[u8],
+    model: &DeepSeek,
+) -> Result<Value> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let filter_dir = env::var_os("PFI_FILTER_DIR")
         .map(PathBuf::from)
@@ -51,7 +57,16 @@ pub async fn analyze(project: &Value, slot: &str, image: &[u8], model: &DeepSeek
     let input = work.path().join("in");
     let output = work.path().join("out");
     fs::create_dir_all(&input).await?;
-    let photo = work.path().join("photo.jpg");
+    let name: String = filename
+        .unwrap_or("photo.jpg")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(120)
+        .collect();
+    let name = name.trim_matches('.');
+    let photo = work
+        .path()
+        .join(if name.is_empty() { "photo.jpg" } else { name });
     fs::write(&photo, image).await?;
     let hound = work.path().join("hound.json");
     fs::write(&hound, serde_json::to_vec(project)?).await?;
@@ -67,10 +82,11 @@ pub async fn analyze(project: &Value, slot: &str, image: &[u8], model: &DeepSeek
 
     let (section, elevation) = slot.split_once(':').context("invalid photo slot")?;
     let label = match elevation {
-        "North" => "N",
-        "East" => "E",
-        "South" => "S",
-        "West" => "W",
+        "North" => Some("N"),
+        "East" => Some("E"),
+        "South" => Some("S"),
+        "West" => Some("W"),
+        _ if section == "close" => None,
         _ => anyhow::bail!("invalid elevation"),
     };
     let record = json!({
@@ -111,7 +127,18 @@ pub async fn analyze(project: &Value, slot: &str, image: &[u8], model: &DeepSeek
             .context("filter wrote no assessment")?,
     )?;
     let slots: Value = serde_json::from_slice(&fs::read(output.join("hound_slots.json")).await?)?;
-    let matched = &slots["slots"][slot];
+    let matched_slot = slots["slots"].as_object().and_then(|items| {
+        items
+            .iter()
+            .find(|(id, value)| id.starts_with("close:") && value["image_id"] == "uploaded-photo")
+    });
+    let matched = if section == "close" {
+        matched_slot
+            .map(|(_, value)| value)
+            .unwrap_or(&slots["slots"][slot])
+    } else {
+        &slots["slots"][slot]
+    };
     Ok(json!({
         "analysis": assessment["draft_observation"]["text"].as_str().unwrap_or(""),
         "source": "pfi-filter",
@@ -120,11 +147,15 @@ pub async fn analyze(project: &Value, slot: &str, image: &[u8], model: &DeepSeek
             "decision_conf": assessment["decision_conf"],
             "reasons": assessment["reasons"],
             "quality": assessment["quality"],
+            "meta": assessment["meta"],
             "shot_type": assessment["shot_type"],
+            "storeys_visible": assessment["storeys_visible"],
+            "elements": assessment["elements"],
             "location": assessment["location"],
             "defects": assessment["defects"],
             "question": assessment["question"],
             "match": matched,
+            "matched_side": matched_slot.and_then(|(id, _)| id.split_once(':').map(|(_, side)| side)),
             "summary": slots["summary"]
         }
     }))

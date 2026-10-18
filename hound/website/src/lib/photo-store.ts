@@ -15,3 +15,13 @@ export async function photoStore(key: string, file?: File): Promise<Blob | undef
     transaction.oncomplete = () => db.close();
   });
 }
+
+export async function photoDelete(key: string): Promise<void> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('photos', 'readwrite');
+    transaction.objectStore('photos').delete(key);
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onerror = () => { db.close(); reject(transaction.error); };
+  });
+}

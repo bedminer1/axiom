@@ -23,22 +23,49 @@
     elevations: string[];
     systems: string[];
     usesDrone: boolean;
+    visualDate?: string; visualDuration?: string; visualMethod?: string; visualLimitations?: string;
+    closeDate?: string; closeDuration?: string; closeMethod?: string; closeBasis?: string;
+    closeCoverage?: Record<string, number>; previousCondition?: string; inspector?: string;
+    visualDateAuto?: boolean; closeDateAuto?: boolean;
+    nameAuto?: boolean;
   };
+  const today = () => {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const nameFromAddress = (address: string) => address.split(/[\n,]/)[0].replace(/\b(?:Singapore|S)\s*\d{6}\b/i, '').trim();
   let project = $state<Project | null>(null);
   let ready = $state(false);
   let selectedElevations = $state<string[]>([...elevations]);
   let selectedSystems = $state<string[]>([]);
   let otherSystem = $state('');
   let error = $state('');
+  let nameValue = $state('');
+  let addressValue = $state('');
+  let nameEdited = $state(false);
+  let visualDateValue = $state('');
+  let closeDateValue = $state('');
+  let visualDateAuto = $state(true);
+  let closeDateAuto = $state(true);
 
   onMount(() => {
     try {
       project = JSON.parse(localStorage.getItem('hound-pfi-project') ?? 'null');
       if (project) {
+        nameValue = project.name || nameFromAddress(project.address);
+        addressValue = project.address;
+        nameEdited = !project.nameAuto;
+        visualDateValue = project.visualDate ?? '';
+        closeDateValue = project.closeDate ?? '';
+        visualDateAuto = project.visualDateAuto ?? false;
+        closeDateAuto = project.closeDateAuto ?? false;
         selectedElevations = project.elevations;
         selectedSystems = project.systems.filter((system) => systemChoices.includes(system));
         otherSystem = project.systems.find((system) => !systemChoices.includes(system)) ?? '';
         if (otherSystem) selectedSystems = [...selectedSystems, 'Other'];
+      } else {
+        visualDateValue = today();
+        closeDateValue = today();
       }
     } catch {
       project = null;
@@ -63,12 +90,26 @@
     const updatedProject = {
       id: project?.id ?? crypto.randomUUID(),
       name: String(data.get('projectName') ?? '').trim(),
+      nameAuto: !nameEdited,
       address: String(data.get('siteAddress') ?? '').trim(),
       owner: String(data.get('owner') ?? '').trim(),
       noticeReference: String(data.get('noticeReference') ?? '').trim(),
       elevations: selectedElevations,
       systems,
-      usesDrone: data.get('usesDrone') === 'on'
+      usesDrone: data.get('usesDrone') === 'on',
+      visualDate: String(data.get('visualDate') ?? ''),
+      visualDuration: String(data.get('visualDuration') ?? '').trim(),
+      visualMethod: String(data.get('visualMethod') ?? '').trim(),
+      visualLimitations: String(data.get('visualLimitations') ?? '').trim(),
+      closeDate: String(data.get('closeDate') ?? ''),
+      closeDuration: String(data.get('closeDuration') ?? '').trim(),
+      closeMethod: String(data.get('closeMethod') ?? '').trim(),
+      closeBasis: String(data.get('closeBasis') ?? '').trim(),
+      closeCoverage: Object.fromEntries(selectedElevations.map((elevation) => [elevation, Number(data.get(`coverage-${elevation}`) || 0)])),
+      previousCondition: String(data.get('previousCondition') ?? '').trim(),
+      inspector: String(data.get('inspector') ?? '').trim(),
+      visualDateAuto,
+      closeDateAuto
     };
     localStorage.setItem('hound-pfi-project', JSON.stringify(updatedProject));
     goto('/checklist');
@@ -96,13 +137,13 @@
         <Field.Group>
           <div class="grid gap-5 md:grid-cols-2">
             <Field.Field class="md:col-span-2">
-              <Field.Label for="project-name">Building name <span class="text-orange">*</span></Field.Label>
-              <Input id="project-name" name="projectName" value={project?.name ?? ''} placeholder="e.g. Orchard Central" autocomplete="organization-title" required />
+              <Field.Label for="site-address">Site address <span class="text-orange">*</span></Field.Label>
+              <Input id="site-address" name="siteAddress" value={addressValue} oninput={(event) => { addressValue = event.currentTarget.value; if (!nameEdited) nameValue = nameFromAddress(addressValue); }} placeholder="Street address" autocomplete="street-address" required />
             </Field.Field>
 
             <Field.Field class="md:col-span-2">
-              <Field.Label for="site-address">Site address <span class="text-orange">*</span></Field.Label>
-              <Input id="site-address" name="siteAddress" value={project?.address ?? ''} placeholder="Street address" autocomplete="street-address" required />
+              <Field.Label for="project-name">Building name or label <span class="text-orange">*</span></Field.Label>
+              <Input id="project-name" name="projectName" value={nameValue} oninput={(event) => { nameValue = event.currentTarget.value; nameEdited = true; }} placeholder="Suggested from address" autocomplete="organization-title" required />
             </Field.Field>
 
             <Field.Field>
@@ -153,6 +194,23 @@
                 Drone used for inspection
               </label>
             </Field.Field>
+
+            <div class="md:col-span-2 border-t border-ink/10 pt-5"><h2 class="text-sm font-semibold">Inspection details</h2></div>
+            <Field.Field><Field.Label for="inspector">Inspector</Field.Label><Input id="inspector" name="inspector" value={project?.inspector ?? ''} /></Field.Field>
+            <Field.Field><Field.Label for="previous-condition">Previous inspection findings</Field.Label><Input id="previous-condition" name="previousCondition" value={project?.previousCondition ?? ''} placeholder="If available" /></Field.Field>
+            <Field.Field><Field.Label for="visual-date">Visual inspection date {visualDateAuto ? '(suggested)' : ''}</Field.Label><Input id="visual-date" type="date" name="visualDate" value={visualDateValue} oninput={(event) => { visualDateValue = event.currentTarget.value; visualDateAuto = false; }} /></Field.Field>
+            <Field.Field><Field.Label for="visual-duration">Visual inspection duration</Field.Label><Input id="visual-duration" name="visualDuration" value={project?.visualDuration ?? ''} placeholder="e.g. 2 days" /></Field.Field>
+            <Field.Field class="md:col-span-2"><Field.Label for="visual-method">Visual inspection method</Field.Label><Input id="visual-method" name="visualMethod" value={project?.visualMethod ?? ''} placeholder="e.g. Ground and drone survey" /></Field.Field>
+            <Field.Field class="md:col-span-2"><Field.Label for="visual-limitations">Areas not inspected or deviations</Field.Label><Input id="visual-limitations" name="visualLimitations" value={project?.visualLimitations ?? ''} placeholder="Leave blank if none reported" /></Field.Field>
+            <Field.Field><Field.Label for="close-date">Close-range inspection date {closeDateAuto ? '(suggested)' : ''}</Field.Label><Input id="close-date" type="date" name="closeDate" value={closeDateValue} oninput={(event) => { closeDateValue = event.currentTarget.value; closeDateAuto = false; }} /></Field.Field>
+            <Field.Field><Field.Label for="close-duration">Close-range inspection duration</Field.Label><Input id="close-duration" name="closeDuration" value={project?.closeDuration ?? ''} placeholder="e.g. 1 day" /></Field.Field>
+            <Field.Field class="md:col-span-2"><Field.Label for="close-method">Close-range method and tools</Field.Label><Input id="close-method" name="closeMethod" value={project?.closeMethod ?? ''} placeholder="e.g. Gondola access, visual and tapping checks" /></Field.Field>
+            <Field.Field class="md:col-span-2"><Field.Label for="close-basis">Why these close-range areas?</Field.Label><Input id="close-basis" name="closeBasis" value={project?.closeBasis ?? ''} placeholder="e.g. Representative façade types and visual defects" /></Field.Field>
+            <div class="md:col-span-2 grid gap-3 sm:grid-cols-4">
+              {#each selectedElevations as elevation}
+                <Field.Field><Field.Label for={`coverage-${elevation}`}>{elevation} close-range area %</Field.Label><Input id={`coverage-${elevation}`} type="number" min="0" max="100" step="0.1" name={`coverage-${elevation}`} value={project?.closeCoverage?.[elevation] ?? ''} /></Field.Field>
+              {/each}
+            </div>
           </div>
         </Field.Group>
       </Field.Set>

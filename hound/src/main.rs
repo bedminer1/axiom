@@ -43,6 +43,7 @@ impl IntoResponse for ApiError {
 struct PhotoRequest {
     slot: String,
     image: String,
+    filename: Option<String>,
     project: Value,
 }
 
@@ -61,6 +62,14 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
     let address = std::env::var("HOUND_API_ADDRESS").unwrap_or_else(|_| "127.0.0.1:5050".into());
     let listener = TcpListener::bind(&address).await?;
+    if std::env::var("HOUND_START_WEBSITE").as_deref() == Ok("0") {
+        println!("Hound API listening on {address}");
+        tokio::select! {
+            result = axum::serve(listener, app) => result?,
+            _ = tokio::signal::ctrl_c() => {}
+        }
+        return Ok(());
+    }
     let site = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("website");
     let vite = site.join("node_modules/vite/bin/vite.js");
     anyhow::ensure!(
@@ -111,9 +120,10 @@ async fn analyze_photo(
         .split_once(':')
         .ok_or_else(|| ApiError(anyhow::anyhow!("invalid photo slot")))?;
     if !["visual", "close"].contains(&section)
-        || !request.project["elevations"]
-            .as_array()
-            .is_some_and(|items| items.iter().any(|value| value == elevation))
+        || (section == "visual"
+            && !request.project["elevations"]
+                .as_array()
+                .is_some_and(|items| items.iter().any(|value| value == elevation)))
     {
         return Err(ApiError(anyhow::anyhow!(
             "photo slot is not in this project"
@@ -123,7 +133,14 @@ async fn analyze_photo(
     let bytes = STANDARD
         .decode(encoded)
         .map_err(|_| ApiError(anyhow::anyhow!("invalid photo data")))?;
-    let filtered = filter::analyze(&request.project, &request.slot, &bytes, &state.model).await;
+    let filtered = filter::analyze(
+        &request.project,
+        &request.slot,
+        request.filename.as_deref(),
+        &bytes,
+        &state.model,
+    )
+    .await;
     let mut result = match filtered {
         Ok(value) => value,
         Err(error) => {
@@ -139,6 +156,21 @@ async fn analyze_photo(
                 .await?
         );
         result["source"] = json!("deepseek-fallback");
+    }
+    let observation = result["analysis"].as_str().unwrap_or("");
+    let defects = &result["filter"]["defects"];
+    let lower = observation.to_lowercase();
+    let likely_defect = defects.as_array().is_some_and(|items| !items.is_empty())
+        || (!lower.contains("no visible defect")
+            && !lower.contains("no crack")
+            && ["crack", "spall", "loose", "corros", "detach", "debris"]
+                .iter()
+                .any(|term| lower.contains(term)));
+    if likely_defect {
+        match state.model.suggest_repair(observation, defects).await {
+            Ok(suggestion) => result["repair_suggestion"] = suggestion,
+            Err(error) => eprintln!("repair suggestion unavailable: {error:#}"),
+        }
     }
     Ok(Json(result))
 }

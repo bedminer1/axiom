@@ -1,6 +1,6 @@
 # Hound
 
-PFI inspection draft. Add a photo to a visual or close-range slot; the [pfi-filter](https://github.com/CricketGaming21/pfi-filter) CLI suggests an observation and returns its photo assessment. If the filter is unavailable or has no observation, Hound uses its short DeepSeek photo prompt.
+PFI inspection draft. Add an overview to each visual elevation and as many close-range photos as needed. The [pfi-filter](https://github.com/CricketGaming21/pfi-filter) CLI suggests observations and returns photo assessments. DeepSeek drafts provisional repair recommendations for visible defects. If the filter is unavailable, Hound uses its short DeepSeek photo prompt.
 
 ## One-time setup
 
@@ -25,7 +25,13 @@ This starts the Rust API and the Vite website at `http://127.0.0.1:5173/`. Stop 
 
 The current pfi-filter CLI does not run its optional YOLO detector: `--yolo` is informational. The `models.zip` ONNX file is installed locally at `models/crack.onnx` with its hash in `models/source.json`, ready for that future filter step. The large ONNX file is ignored by Git.
 
-Photos and edited observations are saved in this browser. The uploaded photo is sent to DeepSeek through the local Rust API for filter analysis. Progress counts reviewed photo slots only, not inspection coverage.
+Photos, the optional floor plan, and edited observations are saved in this browser. Add a floor plan in Section 01 if available. Otherwise Section 03 shows an orientation sketch using the Section 02 elevation photos. Photo positions are guesses until checked; the sketch cannot establish building geometry or inspection coverage. Progress counts reviewed photos, not inspected façade area.
+
+Six illustrative JPEGs and their proposed demo sides are in [`website/static/demo/`](website/static/demo/README.md). Add `north-overview.jpg` to the North visual slot and the detail photos to the close-range section. These photos are not verified as one building.
+
+## Hetzner deployment
+
+`./deploy-hetzner.sh` builds the static site and Rust API locally, syncs them to Hetzner, installs the filter dependencies, and restarts `hound.service`. Caddy serves the site at `https://datadog.properrobotics.org/` and proxies `/api/*` to the local API. The site is password protected; the local credential is stored outside Git at `~/.config/hound/hetzner-access.txt` (username `hound`). The service reads the existing server-side DeepSeek settings through a systemd credential. The old Datadog bot container is separate from this website deployment.
 
 ## Policies
 
