@@ -1,0 +1,3 @@
+[submodule "hound/vendor/pfi-filter"]
+	path = hound/vendor/pfi-filter
+	url = git@github.com:CricketGaming21/pfi-filter.git

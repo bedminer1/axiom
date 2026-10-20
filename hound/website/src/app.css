@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Reenie+Beanie&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ink: 17 17 17;
+  --paper: 255 255 255;
+  --canvas: 249 246 238;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --ink: 245 244 239;
+  --paper: 17 17 16;
+  --canvas: 17 17 16;
+}
+
+html {
+  min-height: 100%;
+  scroll-behavior: smooth;
+  color: rgb(var(--ink));
+  background-color: rgb(var(--canvas));
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: rgb(var(--ink));
+  background-color: rgb(var(--canvas));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background-image:
+    linear-gradient(to right, rgb(var(--ink) / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--ink) / 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.dark body {
+  background-image:
+    linear-gradient(to right, rgb(var(--ink) / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--ink) / 0.055) 1px, transparent 1px);
+}
+
+::selection { background: #f5c77f; color: #292520; }
+
+.watercolor {
+  background: rgba(232, 137, 40, 0.76);
+  filter: blur(0.2px);
+  border-radius: 47% 53% 55% 45% / 52% 44% 56% 48%;
+  box-shadow: inset 14px -9px 24px rgba(255,255,255,.24), 0 0 0 7px rgba(232,137,40,.06);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dog-halo { animation: dog-breathe 2.8s ease-in-out infinite; }
+}
+
+@keyframes dog-breathe {
+  0%, 100% { transform: scale(1) rotate(3deg); opacity: .62; }
+  50% { transform: scale(1.035) rotate(5deg); opacity: .82; }
+}
